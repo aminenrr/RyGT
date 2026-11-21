@@ -72,7 +72,7 @@ aminenrr/rygt7 pr-tests AGENTS.fork.md (rygt7 is frozen; upstream rygt7 was merg
 ## Parked (do not start, remind the owner)
 Tess (stage not translated + FIX-227 barrier batching), dynamic topology (low), upstream Mbus
 shadowing SaveData exports (old rygt7 #65 issue), garage
-nvoglv64.dll crash (watch), 40 "read-write alias of shared guest memory" throws (watch).
+nvoglv64.dll crash (watch), camera hooks signature mismatch at 0x86b030 (watch), 40 "read-write alias of shared guest memory" throws (watch).
 Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 
 ## Fix log
@@ -104,7 +104,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-21 | shadGT | 9e4dfb86 | Round 4 port RyGT-Team/shadgt7#45 PERF-GT7-160 compile ceiling learned from GPU stall / device loss, adapted to this queue (`RYGT_COMPILE_ADAPTIVE`, `RYGT_COMPILE_MAX`) | on (no ceiling until a stall on NVIDIA) | 44957423917 green, artifact 14729430815 | owner test pending |
 | 2026-11-21 | shadGT | 7a25a3ec | Round 4 PRT-TOUCH: DualSense touchpad fingers passed to the game, GT7 touchpad zones (`RYGT_PAD_TOUCH`) | on | 44957423917 green, artifact 14729430815 | owner test pending |
 | 2026-11-21 | RyGT | see log | Round 4 PRT-WARMSKIP-HONEST + splash hint; CI pr-tests -> Release package, Diagnostics manual | on | 44957423917 green, artifact 14729430815 | owner test pending |
-| planned | shadGT | - | Round 4b: shadGT#95 SRT walker storage, ryty_prewarm audit RZS1, Pro downscale + RCAS, checkerboard check, forced AF, LOD bias test, upstream precompile A/B, hide launcher update banner, Opening Movie toggle resets to Off | - | - | - |
+| planned | both | - | Round 4b: see "Round 4b plan" section below (handoff work/handoff-round4b-2026-11-21.md in the Hark project) | - | - | - |
 | planned | shadGT | - | PRT-STALL options (Round 3 item 4), after owner pick | - | - | - |
 
 Not ported: rygt7 10d6502 "Verbose logs" toggle (shadGT has no RYGT_LOG_VERBOSE reader; shadgt7 d9c5c52c PRT-LOGS
@@ -114,3 +114,28 @@ was never ported), c47d3b4 HD UI and all DLSS / HD UI / GT Auto / name tag work 
 - Launcher graphics prewarm: PRT-PREWARM-DONE ok 5462/5462, compute 264/264, 458.2 s, driver cache 778 MB.
 - PRT-STORECLEAN in the launcher run deleted CUSA24769-direct-sets (776 MB, no store version) and CUSA24769.vkpipelinecache (368 MB). The game then failed to open .spv in CUSA24769-direct-sets (28 errors) and wrote 9000+ new SPIR-V: shaders compiled from scratch in game.
 - Rule to fix: an unversioned base store is not stale. Only delete .vN siblings of the same family with an older version. Until then RYGT_SHADER_STORE_CLEANUP=0.
+
+## Round 4a test 2026-11-21 (owner, two runs, Release build 44957423917)
+- Owner: splash prewarm ON two boots, only new shaders compiled, no missing textures, no crashes, DualSense touchpad works. Shader folder about 2.5 GB.
+- Launcher pass: PRT-PREWARM-DONE ok 4478/4478, compute 241/241, 6.4 s, driver cache 355 MB saved. PRT-WARMSKIP stamped.
+- Run 1 compiled 1433 pipelines in game, run 2 350. Cause: FIX-SGT-010 rotated the 1113 MB driver cache to .vkpipelinecache.old (GT7 rotate limit) so run 1 started empty. The .old (1113 MB) stays on disk unused.
+- PERF-GT7-160: compile ceiling 20 for 10de-24e0 (no stall seen). PRT-STORECLEAN: 0 deleted (owner still has RYGT_SHADER_STORE_CLEANUP=0).
+- VRAM over the Auto budget at times: 7099 to 7322 MB of 6993 MB (PRT-PERF lines). GPU busy 75 to 93%.
+- ryty_prewarm audit: spv_invalid=12912 of 17103 (RZS1 compressed files, audit reads them raw).
+- Photos black (scapes and replay). Game writes /download0/APP_DATA/photo/001.gxl and 001_t.gxl; image shows black. Broken since shadGT migration.
+- Menus slower moving map to garage etc, with the loading notice bottom right, since shadGT migration.
+- camera-validation.log: "signature mismatch for Cockpit final view at RVA 0x86b030, no camera hooks installed" every start.
+- Still there (watch): "read-write alias of shared guest memory" throws, filemapping.json pread error 5 (file opened write-only), sceSystemGestureUpdateAllTouchRecognizer unimplemented.
+
+## Round 4b plan (owner list 2026-11-21, handoff to the next agent)
+Priority order. Each item: own switch in shadGT src/video_core/rygt_switches.cpp (or launcher setting), Fix log row, one CI run (push shadGT first, then RyGT; pr-tests push runs ci-package-release.yml).
+1. Driver cache rotation: GT7 rotate limit too low for an 8 GB card user (1113 MB cache rotated, 1433 recompiles). Raise GT7 driver_cache_rotate_mb (title_defaults) or rebuild from records after a rotation; delete the .old after a successful save. Switch RYGT_DRIVER_CACHE_KEEP (name free).
+2. Port shadGT#95 SRT walker storage full (+508/-31).
+3. ryty_prewarm audit RZS1: audit must decompress before validating (spv_invalid 12912/17103).
+4. Menu transition loads slower since shadGT (map to garage). Measure first (stall lines, NAT-TRACE, VRAM over budget at 7.1 to 7.3 GB of 6993), then propose. No fix without owner go.
+5. Pro mode IQ: presenter downscale 3200x1800 CB to 2560x1440 + optional RCAS (RYGT_PRO_DOWNSCALE), checkerboard resolve check.
+6. Forced AF RYGT_FORCE_ANISO. LOD bias test only (SHADGT_TEXTURE_LOD_BIAS=-0.5).
+7. A/B test only: upstream PERF-GT7-137 precompile vs PRT-PREWARM (RYGT_PREWARM_EXCLUSIVE=0).
+8. Launcher: hide update banner ("RyGT <date> is available (you have nightly ...)" with Changelog / Update), it points at upstream. Switch or setting, default hidden.
+9. Opening Movie option (Options > Global) set On resets to Off next launch, OP movie does not play. Find what resets it (our AvPlayer/movie skip patches or the save option not kept), make it stick.
+10. LOW priority, only if token budget allows, else park for next release: photo mode black (scapes and replay). Suspect the photo render target is never written back to guest memory before the game encodes 001.gxl (GPU-only image on the native renderer).
