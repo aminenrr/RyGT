@@ -70,8 +70,8 @@ aminenrr/rygt7 pr-tests AGENTS.fork.md (rygt7 is frozen; upstream rygt7 was merg
 - Round 3 = items 1, 2, 4 (options only), 5, 7 (owner tests first), 8. Items 3 and 6: report only.
 
 ## Parked (do not start, remind the owner)
-Tess (stage not translated + FIX-227 barrier batching), dynamic topology (low), shadgt7 #45, upstream Mbus
-shadowing SaveData exports (old rygt7 #65 issue), Pro mode sharpen / checkerboard resolve check, garage
+Tess (stage not translated + FIX-227 barrier batching), dynamic topology (low), upstream Mbus
+shadowing SaveData exports (old rygt7 #65 issue), garage
 nvoglv64.dll crash (watch), 40 "read-write alias of shared guest memory" throws (watch).
 Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 
@@ -97,6 +97,14 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-21 | RyGT | fc73662 | ryty_prewarm audit accepts RZS1 compressed .spv | always | run 44911191881 green, artifact 14712320793 | pending |
 | 2026-11-21 | RyGT | 8107690 | B1 splash prewarm + launcher graphics prewarm toggles, B2 pretranslate on (unchecked =0), B3 PRT-WARMSKIP (`RYGT_PREWARM_WARM_SKIP`), B4 watermark toggle (was rygt7 1b4fbb5, ecb2ec8, 1f6a94d, 10d6502) | splash on, launcher off | run 44911191881 green, artifact 14712320793 | pending |
 | 2026-11-21 | RyGT | c7b3be4, fa58b58 | CI renderer branch pr/trophies -> pr-tests | - | run 44911191881 green, artifact 14712320793 | - |
+| 2026-11-21 | shadGT | 2f52f1ab | Round 4 port shadGT#79 PERF-GT7-193 keep CPU-written mirrors in GT7 (`SHADGT_NATIVE_MIRROR_KEEP_WRITTEN`) | GT7 on | Round 4 release run | pending |
+| 2026-11-21 | shadGT | cb201353 | Round 4 port shadGT#93 FIX-SGT-086 store key once built (`SHADGT_KEYS_AT_BUILD_END`) | on | Round 4 release run | pending |
+| 2026-11-21 | shadGT | 92aef026 | Round 4 PRT-STORECLEAN-BASE: base store never deleted, no cleanup in launcher prewarm run (`RYGT_SHADER_STORE_CLEANUP`) | GT7 on | Round 4 release run | pending |
+| 2026-11-21 | shadGT | 1688122a | Round 4 PRT-RECORD (record even with splash prewarm off, `RYGT_PREWARM_RECORD`) + PRT-KEEPBUILT (record once built, `RYGT_PREWARM_KEEP_BUILT`) | GT7 on / on | Round 4 release run | pending |
+| 2026-11-21 | shadGT | 9e4dfb86 | Round 4 port RyGT-Team/shadgt7#45 PERF-GT7-160 compile ceiling learned from GPU stall / device loss, adapted to this queue (`RYGT_COMPILE_ADAPTIVE`, `RYGT_COMPILE_MAX`) | on (no ceiling until a stall on NVIDIA) | Round 4 release run | pending |
+| 2026-11-21 | shadGT | 7a25a3ec | Round 4 PRT-TOUCH: DualSense touchpad fingers passed to the game, GT7 touchpad zones (`RYGT_PAD_TOUCH`) | on | Round 4 release run | pending |
+| 2026-11-21 | RyGT | see log | Round 4 PRT-WARMSKIP-HONEST + splash hint; CI pr-tests -> Release package, Diagnostics manual | on | Round 4 release run | pending |
+| planned | shadGT | - | Round 4b: shadGT#95 SRT walker storage, ryty_prewarm audit RZS1, Pro downscale + RCAS, checkerboard check, forced AF, LOD bias test, upstream precompile A/B | - | - | - |
 | planned | shadGT | - | PRT-STALL options (Round 3 item 4), after owner pick | - | - | - |
 
 Not ported: rygt7 10d6502 "Verbose logs" toggle (shadGT has no RYGT_LOG_VERBOSE reader; shadgt7 d9c5c52c PRT-LOGS
