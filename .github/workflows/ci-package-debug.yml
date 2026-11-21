@@ -52,7 +52,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           RYGT_SOURCE_REPO: aminenrr/RyGT
           RYGT_RENDERER_REPOSITORY: https://github.com/aminenrr/shadGT.git
-          RYGT_RENDERER_BRANCH: pr/trophies
+          RYGT_RENDERER_BRANCH: pr-tests
         run: python3 ci/github-registry/registry_ci.py resolve debug-ci
   windows:
     needs: [source, tests]
@@ -98,7 +98,7 @@ jobs:
           python -m unittest discover -s ci/tests -p 'test_*.py'
           if ($LASTEXITCODE) { throw 'CI regression tests failed' }
           $env:RYGT_RENDERER_REPOSITORY = 'https://github.com/aminenrr/shadGT.git'
-          $env:RYGT_RENDERER_BRANCH = 'pr/trophies'
+          $env:RYGT_RENDERER_BRANCH = 'pr-tests'
           . ./ci/setup-hosted-windows.ps1
           & ./ci/build-windows.ps1 -Target Launcher -Flavor Diagnostics
           & ./ci/build-windows.ps1 -Target Renderer -Flavor Diagnostics
