@@ -162,12 +162,12 @@ std::int64_t ReadIntoGuest(void* buffer, std::size_t bytes, const std::function<
         KernelDiagMark(static_cast<KernelDiagZone>(63), reinterpret_cast<std::uintptr_t>(buffer));
     }
 #ifdef _WIN32
-    // RYGT_STAGED_GUEST_READS: 0 the historical path (prepare, read in place, a host buffer when
+    // PERF-RT-017: RYGT_STAGED_GUEST_READS: 0 the historical path (prepare, read in place, a host buffer when
     // that fails), 1 a reusable host buffer first, 2 the read in place tried once more after a
     // second prepare before the host buffer.
     static const int mode = [] {
         const char* value = std::getenv("RYGT_STAGED_GUEST_READS");
-        return value ? std::atoi(value) : 0;
+        return (value && *value) ? std::atoi(value) : 2;
     }();
     if (mode == 1) {
         static thread_local GuestReadBuffer storage;
@@ -207,14 +207,27 @@ std::int64_t ReadIntoGuest(void* buffer, std::size_t bytes, const std::function<
 #endif
     if (n >= 0 || buffer == nullptr || bytes == 0) return n;
     const int error = errno;
+    static thread_local GuestReadBuffer fallbackStorage;
+    struct FallbackLease {
+        GuestReadBuffer& storage;
+        bool active = false;
+        ~FallbackLease() { if (active) storage.Release(); }
+    } fallbackLease{fallbackStorage};
     std::vector<char> bounce;
+    char* srcPtr = nullptr;
     {
         GuestReadTimer timer{GuestReadPhase::Allocate, bytes};
-        bounce.resize(bytes);
+        srcPtr = fallbackStorage.AcquireAny(bytes);
+        if (srcPtr != nullptr) {
+            fallbackLease.active = true;
+        } else {
+            bounce.resize(bytes);
+            srcPtr = bounce.data();
+        }
     }
     const std::int64_t retried = [&] {
         GuestReadTimer timer{GuestReadPhase::Retry, bytes};
-        return read(bounce.data());
+        return read(srcPtr);
     }();
     if (retried < 0) {
         errno = error;
@@ -225,10 +238,15 @@ std::int64_t ReadIntoGuest(void* buffer, std::size_t bytes, const std::function<
         std::fprintf(stderr, "[file] read into %p (%zu bytes) failed (errno %d); read again through a host buffer\n",
                      buffer, bytes, error);
     }
-    PrepareGuestWrite(buffer, static_cast<std::size_t>(retried));
-    {
-        GuestReadTimer timer{GuestReadPhase::Copy, static_cast<std::size_t>(retried)};
-        std::memcpy(buffer, bounce.data(), static_cast<std::size_t>(retried));
+    if (retried > 0) {
+        {
+            GuestReadTimer timer{GuestReadPhase::Prepare, static_cast<std::size_t>(retried)};
+            PrepareGuestWrite(buffer, static_cast<std::size_t>(retried));
+        }
+        {
+            GuestReadTimer timer{GuestReadPhase::Copy, static_cast<std::size_t>(retried)};
+            std::memcpy(buffer, srcPtr, static_cast<std::size_t>(retried));
+        }
     }
     return retried;
 }
