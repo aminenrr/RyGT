@@ -84,9 +84,9 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-21 | shadGT | e17e29d6 | 33b7a131 -> PRT-PREWARM port (`RYGT_PIPELINE_PREWARM`, `RYGT_PIPELINE_KEY_NORMALIZE`, `RYGT_SPLASH_SHADER_PROGRESS`, `RYGT_PREWARM_ONLY`, `RYGT_PREWARM_DIRTY_MARK`, `RYGT_PERF_LINE`) | GT7 on | run 44911191881 green, artifact 14712320793 | pending |
 | 2026-11-21 | shadGT | b927d93e | b026dbf3 -> Round 2 switch lines (trophy lines kept from e099ee0, no duplicates) | - | run 44911191881 green, artifact 14712320793 | - |
 | 2026-11-21 | shadGT | 35d6fefd | PRT-EXCL: GPU.precompile_shaders does not start PERF-038 (PERF-GT7-137 path) while PRT-PREWARM owns GT7 (`RYGT_PREWARM_EXCLUSIVE`) | on | run 44911191881 green, artifact 14712320793 | pending |
-| 2026-11-21 | shadGT | ac750fa3 | Round 3 item 1 PRT-STORECLEAN: delete this family's set-aside stores and old <serial>.vkpipelinecache (`RYGT_SHADER_STORE_CLEANUP`) | GT7 on | run 44911191881 green, artifact 14712320793 | pending |
-| 2026-11-21 | shadGT | abfa82d9 | Round 3 item 2 PRT-STORECOMPRESS: deflate new .spv, read both (`RYGT_SHADER_STORE_COMPRESS`) | GT7 on | run 44911191881 green, artifact 14712320793 | pending |
-| 2026-11-21 | shadGT | f8670eab | Round 3 item 8 PRT-UNBUILDABLE: skip records that failed to build on this renderer + driver (`RYGT_PREWARM_SKIP_UNBUILDABLE`) | on | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | shadGT | ac750fa3 | Round 3 item 1 PRT-STORECLEAN: delete this family's set-aside stores and old <serial>.vkpipelinecache (`RYGT_SHADER_STORE_CLEANUP`) | GT7 on | run 44911191881 green, artifact 14712320793 | FAIL 2026-11-21: deleted CUSA24769-direct-sets (776 MB, no store-version.txt) that the game still read; game retranslated 9000+ SPIR-V. Use RYGT_SHADER_STORE_CLEANUP=0 until fixed |
+| 2026-11-21 | shadGT | abfa82d9 | Round 3 item 2 PRT-STORECOMPRESS: deflate new .spv, read both (`RYGT_SHADER_STORE_COMPRESS`) | GT7 on | run 44911191881 green, artifact 14712320793 | OK 2026-11-21: ratio 3.45, 0 unreadable |
+| 2026-11-21 | shadGT | f8670eab | Round 3 item 8 PRT-UNBUILDABLE: skip records that failed to build on this renderer + driver (`RYGT_PREWARM_SKIP_UNBUILDABLE`) | on | run 44911191881 green, artifact 14712320793 | OK 2026-11-21: 15 marked; launcher pass 5462/5462 + 264 compute in 458 s |
 | 2026-11-21 | RyGT | e785609 | merge RyGT#62 FIX-RT-019 single-callback SDL mixer + audio thread priority (was rygt7 2d7c06b) | always (no switch upstream) | run 44911191881 green, artifact 14712320793 | pending |
 | 2026-11-21 | RyGT | 9107128 | merge RyGT#59 PERF-RT-017 positioned I/O + guest read buffers (was rygt7 e928cf1) | always | run 44911191881 green, artifact 14712320793 | pending |
 | 2026-11-21 | RyGT | bf9c3a0 | merge RyGT#60 PERF-RT-018 app0 path cache + GT7 settings on direct start (was rygt7 4975ab9) | always | run 44911191881 green, artifact 14712320793 | pending |
@@ -101,3 +101,8 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 
 Not ported: rygt7 10d6502 "Verbose logs" toggle (shadGT has no RYGT_LOG_VERBOSE reader; shadgt7 d9c5c52c PRT-LOGS
 was never ported), c47d3b4 HD UI and all DLSS / HD UI / GT Auto / name tag work (dropped), f33505f trophies (= #69).
+
+## Round 3 test 2026-11-21 (log one run)
+- Launcher graphics prewarm: PRT-PREWARM-DONE ok 5462/5462, compute 264/264, 458.2 s, driver cache 778 MB.
+- PRT-STORECLEAN in the launcher run deleted CUSA24769-direct-sets (776 MB, no store version) and CUSA24769.vkpipelinecache (368 MB). The game then failed to open .spv in CUSA24769-direct-sets (28 errors) and wrote 9000+ new SPIR-V: shaders compiled from scratch in game.
+- Rule to fix: an unversioned base store is not stale. Only delete .vN siblings of the same family with an older version. Until then RYGT_SHADER_STORE_CLEANUP=0.
