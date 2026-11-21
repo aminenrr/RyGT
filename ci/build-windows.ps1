@@ -32,13 +32,14 @@ if ($Target -eq 'Launcher') {
         '-DRTY_BUILD_GUI=OFF','-DRTY_ENABLE_LTO=OFF',"-DCMAKE_C_COMPILER=$toolchain/gcc.exe",
         "-DCMAKE_CXX_COMPILER=$toolchain/g++.exe","-DFFMPEG_PREBUILT_DIR=$ffmpeg")
     # FEAT-GTS-263: the converter (ryty.exe) and the wheel probe too; they came from the archive before.
-    Invoke-Checked 'cmake' @('--build',$build,'--target','libs','ryty','ryty-wheel-probe')
+    # FEAT-RT-020: include the GT7 Vulkan pre-warmer in the shared runtime artifact.
+    Invoke-Checked 'cmake' @('--build',$build,'--target','libs','ryty','ryty-wheel-probe','ryty_prewarm')
     $libraries = @(Get-ChildItem "$build/core/libs/libs" -Filter *.prx -File | Where-Object Name -ne 'libSceVideoOut.prx')
     foreach ($required in 'libc.prx','libkernel.prx','libScePad.prx') {
         if (!($libraries | Where-Object Name -eq $required)) { throw "Runtime build is missing $required" }
     }
     $libraries | Copy-Item -Destination $out
-    foreach ($program in 'ryty.exe','ryty-wheel-probe.exe') {
+    foreach ($program in 'ryty.exe','ryty-wheel-probe.exe','ryty_prewarm.exe') {
         $built = @(Get-ChildItem $build -Recurse -Filter $program -File)
         if ($built.Count -ne 1) { throw "Expected exactly one built $program (found $($built.Count))" }
         Copy-Item $built[0].FullName $out
@@ -51,7 +52,7 @@ if ($Target -eq 'Launcher') {
     Copy-Item "$toolchain/libzstd.dll" $out
     Copy-Item $zstdLicense "$out/zstd-LICENSE.txt"
     Copy-Item ci/runtime-toolchain.json "$out/RUNTIME-TOOLCHAIN.json"
-    Write-Host "Runtime: $($libraries.Count) libraries, the converter and the wheel probe built with $compiler"
+    Write-Host "Runtime: $($libraries.Count) libraries, the converter, wheel probe and Vulkan pre-warmer built with $compiler"
 } elseif ($Target -eq 'Tools') {
     # FEAT-GTS-263: what the October 25 archive used to supply besides the runtime: adcpatch, built
     # from its pinned upstream sources and this repository's patches (tools/adcpatch/README.txt), and

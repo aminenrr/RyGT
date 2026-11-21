@@ -6,6 +6,11 @@ The version lives in `loader/Version.cs`. To release a change, bump
 `LauncherVersion.Value` there and add a section here with the same number;
 CI fails when the two disagree.
 
+## 0.3.14 - 2026-11-21
+
+* pr-tests: RyGT-Team/RyGT#61 merged (FEAT-GT7-184, GustavoPeetry): GT7 can optionally audit its shader store
+  and pre-warm recorded Vulkan compute pipelines before Play. The Shaders setting defaults to off.
+
 ## 0.3.13 - 2026-11-21
 
 * FEAT-GT7-187/189: GT7 gets a Trophies page. The player's own trophy key (kept with Windows DPAPI in

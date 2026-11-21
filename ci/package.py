@@ -147,7 +147,7 @@ def verify_runtime(folder, commit):
     libraries = sorted(name for name in names if name.lower().endswith('.prx'))
     if 'libSceVideoOut.prx' in libraries or not {'libc.prx', 'libkernel.prx'} <= set(libraries):
         raise RuntimeError('Unexpected runtime library set')
-    for dll in RUNTIME_DLLS + ('RUNTIME-TOOLCHAIN.json', 'ryty.exe', 'ryty-wheel-probe.exe'):
+    for dll in RUNTIME_DLLS + ('RUNTIME-TOOLCHAIN.json', 'ryty.exe', 'ryty-wheel-probe.exe', 'ryty_prewarm.exe'):
         if dll not in names:
             raise RuntimeError(f'Runtime artifact is missing {dll}')
     return [folder / name for name in libraries], [folder / name for name in RUNTIME_DLLS]
@@ -268,6 +268,8 @@ def assemble(commit, flavor, channel, suffix):
         place(dll, 'converter/' + dll.name)  # the converter is linked against the same runtime
     place(runtime_folder / 'ryty.exe', 'converter/ryty.exe')
     place(runtime_folder / 'ryty-wheel-probe.exe', 'tools/ryty-wheel-probe.exe')
+    # FEAT-RT-020: the unified launcher starts GT7's optional pre-warmer from tools/.
+    place(verify_artifact(runtime_folder, 'ryty_prewarm.exe', commit), 'tools/ryty_prewarm.exe')
     for library_name in RENDERER_LIBRARIES:
         place(verify_artifact(renderer_folder, library_name, commit), 'libs/' + library_name)
     for tool_name in RENDERER_TOOLS:
@@ -288,6 +290,7 @@ def assemble(commit, flavor, channel, suffix):
         place(verify_artifact(runtime_folder, file, commit, 'pe' if file.endswith('.dll') else 'data'), relative)
     check_package_imports(stage)
     for name_required in ('converter/ryty.exe', 'tools/adcpatch/adcpatch.exe', 'tools/ryty-wheel-probe.exe',
+                          'tools/ryty_prewarm.exe',
                           'tools/ryty-feel-test.exe', 'dlss/' + DLSS_PLUGIN, DLSS_LICENSE,
                           'libs/libc.prx', 'libs/libkernel.prx', 'libs/libSceBluetoothHid.prx',
                           'amd_fidelityfx_vk.dll', 'amd_fidelityfx_vk-LICENSE.txt', 'launcher/background.png',
@@ -306,7 +309,7 @@ def assemble(commit, flavor, channel, suffix):
         runtime_toolchain=json.loads((runtime_folder / 'RUNTIME-TOOLCHAIN.json').read_text(encoding='utf-8-sig')),
         sources=dict(
             built=['RyGTLauncher.exe', 'libs/libSceVideoOut.prx', 'converter/ryty.exe', 'tools/ryty-wheel-probe.exe',
-                   'tools/adcpatch/adcpatch.exe'] + sorted('libs/' + library.name for library in libraries) +
+                   'tools/ryty_prewarm.exe', 'tools/adcpatch/adcpatch.exe'] + sorted('libs/' + library.name for library in libraries) +
                   ['libs/' + name for name in RENDERER_LIBRARIES if name not in {library.name for library in libraries}] +
                   ['tools/' + name for name in RENDERER_TOOLS] + ['dlss/' + DLSS_PLUGIN] +
                   [relative for _, relative in GT7_TOOLS_FILES],

@@ -1247,6 +1247,137 @@ namespace RyGT
         }
 
 
+
+        // FEAT-GT7-184: the shared Shaders page calls these helpers only for GT7.
+        GlowButton gt7PrewarmCancel;
+        readonly object gt7PrewarmLock = new object();
+        Process gt7PrewarmProcess;
+        volatile bool gt7PrewarmCancelled;
+
+        GlowButton CreateGt7PrewarmCancel()
+        {
+            gt7PrewarmCancel = new GlowButton
+            {
+                Text = "Cancel", Size = new Size(116, 46), Font = Dark.Caps(10f), Visible = false
+            };
+            gt7PrewarmCancel.Click += delegate { CancelGt7Prewarm(); };
+            return gt7PrewarmCancel;
+        }
+
+        void AddGt7PrewarmOption(TableLayoutPanel shaders)
+        {
+            AddOption(shaders, "Warm recorded compute shaders before Play", "GPU", "precompile_before_play", false);
+            shaders.Controls.Add(Hint("Checks GT7's existing shader store and warms recorded Vulkan compute pipelines. New cars and tracks can still compile shaders during play."));
+        }
+
+        void ShowGt7PrewarmCancel(bool visible)
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            if (InvokeRequired) { BeginInvoke(new Action<bool>(ShowGt7PrewarmCancel), visible); return; }
+            gt7PrewarmCancel.Visible = visible;
+            gt7PrewarmCancel.Enabled = visible;
+            home.PerformLayout();
+        }
+
+        void CancelGt7Prewarm()
+        {
+            if (gt7PrewarmCancel == null || !gt7PrewarmCancel.Visible) return;
+            gt7PrewarmCancelled = true;
+            gt7PrewarmCancel.Enabled = false;
+            SetStatus("Cancelling shader pre-warm...");
+            lock (gt7PrewarmLock)
+            {
+                if (gt7PrewarmProcess != null) RequestGt7PrewarmCancellation(gt7PrewarmProcess);
+            }
+        }
+
+        static void RequestGt7PrewarmCancellation(Process process)
+        {
+            try
+            {
+                if (process.HasExited) return;
+                process.StandardInput.WriteLine("CANCEL");
+                process.StandardInput.Flush();
+            }
+            catch (InvalidOperationException) { }
+            catch (IOException) { }
+        }
+
+        internal static string Gt7PrewarmArguments(string folder, long maxMb, int device)
+        {
+            int trailing = folder.Length - folder.TrimEnd('\\').Length;
+            return "prewarm --root \"" + folder + new string('\\', trailing) +
+                "\" --cache-max-mb " + Math.Max(0, maxMb) + " --device-index " + device;
+        }
+
+        bool RunGt7Prewarm()
+        {
+            string tool = Path.Combine(root, "tools", "ryty_prewarm.exe");
+            if (!File.Exists(tool))
+            {
+                Log("Shader pre-warmer missing. Starting GT7.");
+                return true;
+            }
+
+            var start = new ProcessStartInfo(tool)
+            {
+                WorkingDirectory = root,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true
+            };
+            CustomEnvironment.Apply(start, settings.Env);
+            long maxMb = DriverCacheMaxMb(root);
+            long customMb;
+            string cacheSwitch = start.EnvironmentVariables["SHADGT_DRIVER_CACHE"];
+            if (cacheSwitch == "0" || maxMb == 0) return true;
+            if (long.TryParse(start.EnvironmentVariables["SHADGT_DRIVER_CACHE_MAX_MB"], out customMb))
+            {
+                if (customMb == 0) return true;
+                maxMb = customMb;
+            }
+            start.Arguments = Gt7PrewarmArguments(root, maxMb, ReadIntSetting("Vulkan", "gpu_id", -1));
+
+            gt7PrewarmCancelled = false;
+            ShowGt7PrewarmCancel(true);
+            SetStatus("Checking GT7's shader cache...");
+            try
+            {
+                using (var process = Process.Start(start))
+                {
+                    if (process == null) return true;
+                    lock (gt7PrewarmLock)
+                    {
+                        gt7PrewarmProcess = process;
+                        if (gt7PrewarmCancelled) RequestGt7PrewarmCancellation(process);
+                    }
+                    string line;
+                    while ((line = process.StandardOutput.ReadLine()) != null)
+                    {
+                        if (gt7PrewarmCancelled) continue;
+                        string[] fields = line.Split('|');
+                        if (fields.Length > 3 && fields[0] == "PROGRESS" && fields[1] == "COMPUTE")
+                            SetStatus("Warming compute shaders (" + fields[2] + "/" + fields[3] + ")...");
+                        else
+                            Log("Shader pre-warm: " + line);
+                    }
+                    process.WaitForExit();
+                    return !gt7PrewarmCancelled && process.ExitCode != 3;
+                }
+            }
+            catch (Exception error)
+            {
+                Log("Shader pre-warm could not finish: " + error.Message);
+                return !gt7PrewarmCancelled;
+            }
+            finally
+            {
+                lock (gt7PrewarmLock) { gt7PrewarmProcess = null; }
+                ShowGt7PrewarmCancel(false);
+            }
+        }
+
         void PlayGt7()
         {
             if (IsGameRunning()) { RefreshState(); return; }
@@ -1286,6 +1417,17 @@ namespace RyGT
                     UsePortableShaderCache();
                     ConfigureGT7();
                     settings.Save();
+                    if (GpuSetting(root, "precompile_before_play") is bool &&
+                        (bool)GpuSetting(root, "precompile_before_play") && !RunGt7Prewarm())
+                    {
+                        BeginInvoke(new Action(delegate
+                        {
+                            busy = false;
+                            RefreshState();
+                            status.Text = "Shader pre-warm cancelled. Press Play to try again.";
+                        }));
+                        return;
+                    }
                     prepared = true;
                 }
                 catch (DumpFileException e) { Log("ERROR: " + e.Message); playDumpProblem = e; }

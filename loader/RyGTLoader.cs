@@ -1238,6 +1238,7 @@ namespace RyGT
             int x = Left_;
             foreach (var button in buttons)
             {
+                if (!button.Visible) continue;
                 button.Location = new Point(x, ButtonsTop);
                 x += button.Width + Gap;
             }
@@ -2104,7 +2105,7 @@ namespace RyGT
             };
             var gear = new GlowButton { Text = ((char)0xE713).ToString(), Glyph = true, Size = new Size(46, 46), Font = new Font("Segoe MDL2 Assets", 13f) };
             gear.Click += delegate { ShowSettings(lastPage); };
-            home = new HomeView(pictures, (GlowButton)play, gear) { Dock = DockStyle.Fill, Title = "GRAN TURISMO" };
+            home = new HomeView(pictures, (GlowButton)play, gear, CreateGt7PrewarmCancel()) { Dock = DockStyle.Fill, Title = "GRAN TURISMO" };
             // FEAT-GTS-290: the target game, at the top left of the home view. Changing it fades the
             // accent (red GT Sport, blue GT7) and the pictures, and makes the settings that game's.
             gameChooser = new DarkComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 236, FlatStyle = FlatStyle.Flat, AccessibleName = "Game" };
@@ -2166,7 +2167,7 @@ namespace RyGT
                 if (target == GameKind.GTSport) BeginInvoke((MethodInvoker)PromptObsoleteSettings); // once the window is up
                 if (RootReady(target) && ReadSetting("Launcher", "check_updates", true)) CheckForUpdate(false); // FEAT-GTS-272
             };
-            FormClosing += delegate { CommitPaths(); };
+            FormClosing += delegate { CancelGt7Prewarm(); CommitPaths(); };
             RefreshState();
             // GT7 (from ryGT7): Play and Set up follow whether GT7.exe is running.
             var stateTimer = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -2592,6 +2593,7 @@ namespace RyGT
                 // object sets, and GT7 runs without shader objects.
                 AddOption(shaders, "Precompile shaders on the splash screen", "GPU", "precompile_shaders", false);
                 shaders.Controls.Add(Hint("The splash screen waits until every stored shader is built: up to 15 minutes after a driver or ryGT update."));
+                AddGt7PrewarmOption(shaders);
             }
             // What the game does while a new shader compiles during play (GPU.compile_mode): GT Sport
             // slows down by default, GT7 keeps going.

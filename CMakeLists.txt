@@ -163,6 +163,11 @@ endif()
 
 add_subdirectory(core/relinker)
 
+# FEAT-GT7-184: the GT7 pre-warmer uses the bundled Vulkan API headers.
+if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/Vulkan-Headers/include/vulkan/vulkan.h")
+    add_subdirectory(tools/ryty_prewarm)
+endif()
+
 if(BUILD_TESTING)
     add_subdirectory(plugins/dlss/tests)
 endif()

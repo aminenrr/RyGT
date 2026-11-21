@@ -117,7 +117,7 @@ class PackageTests(unittest.TestCase):
         # This source's own (smaller) libSceAudio3d: the renderer's must replace it (FIX-GTS-262).
         (runtime / 'libSceAudio3d.prx').write_bytes(linked_pe(exports=('runtime_audio3d',)))
         (runtime / 'libSceBluetoothHid.prx').write_bytes(linked_pe(exports=('ryty_stub_none',)))
-        for program in ('ryty.exe', 'ryty-wheel-probe.exe'):  # FEAT-GTS-263
+        for program in ('ryty.exe', 'ryty-wheel-probe.exe', 'ryty_prewarm.exe'):  # FEAT-GTS-263
             (runtime / program).write_bytes(linked_pe(exports=(program,)))
         for dll in pkg.RUNTIME_DLLS:
             (runtime / dll).write_bytes(pe())
@@ -181,6 +181,7 @@ class PackageTests(unittest.TestCase):
                                              ('converter/ryty.exe', 'artifacts/runtime/ryty.exe'),
                                              ('converter/libstdc++-6.dll', 'artifacts/runtime/libstdc++-6.dll'),
                                              ('tools/ryty-wheel-probe.exe', 'artifacts/runtime/ryty-wheel-probe.exe'),
+                                             ('tools/ryty_prewarm.exe', 'artifacts/runtime/ryty_prewarm.exe'),
                                              ('tools/ryty-feel-test.exe', 'artifacts/renderer' + ('' if variant['channel'] == 'ci' else '-diagnostics') + '/ryty-feel-test.exe'),
                                              ('dlss/ryGT_dlss.dll', 'artifacts/renderer' + ('' if variant['channel'] == 'ci' else '-diagnostics') + '/ryGT_dlss.dll'),
                                              ('NVIDIA-RTX-SDKs-LICENSE.txt', 'artifacts/renderer' + ('' if variant['channel'] == 'ci' else '-diagnostics') + '/NVIDIA-RTX-SDKs-LICENSE.txt'),
