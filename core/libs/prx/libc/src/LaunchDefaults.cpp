@@ -31,12 +31,9 @@ std::string ExeFolder() {
     return narrow;
 }
 
-std::string ReadFile(const std::string& path) {
+std::string ReadFile(const std::filesystem::path& path) {
     std::string text;
-    const int length = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
-    std::wstring wide(length > 0 ? length - 1 : 0, L'\0');
-    if (length > 0) MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wide.data(), length);
-    if (FILE* file = _wfopen(wide.c_str(), L"rb")) {
+    if (FILE* file = _wfopen(path.c_str(), L"rb")) {
         char buffer[4096];
         size_t read;
         while ((read = std::fread(buffer, 1, sizeof(buffer), file)) > 0) text.append(buffer, read);
@@ -122,7 +119,40 @@ void Apply() {
     if (!GameSerial::RunningGt7()) return;
     // user\custom_configs\CUSA24769.json (CUSA03220.json in a GT7 folder from before GAME-004).
     const std::string configPath = GameSerial::GameConfigPath(root, true);
-    const std::string config = ReadFile(configPath);
+    const std::string config = ReadFile(std::filesystem::path(std::u8string(configPath.begin(), configPath.end())));
+    // PERF-RT-018: use GT7's own launcher INI on a direct start.
+    if (!root.empty()) {
+        const std::filesystem::path folder(std::u8string(root.begin(), root.end()));
+        const auto path = GameSerial::SettingsIniPath(folder, GameSerial::kGt7);
+        const std::string ini = ReadFile(path);
+        std::size_t pos = 0;
+        while (pos < ini.size()) {
+            std::size_t eol = ini.find('\n', pos);
+            if (eol == std::string::npos) eol = ini.size();
+            std::string line = ini.substr(pos, eol - pos);
+            pos = eol + 1;
+            const std::size_t first = line.find_first_not_of(" \t\r\n");
+            if (first == std::string::npos) continue;
+            const std::size_t last = line.find_last_not_of(" \t\r\n");
+            line = line.substr(first, last - first + 1);
+            if (line.size() >= 3 &&
+                static_cast<unsigned char>(line[0]) == 0xEF &&
+                static_cast<unsigned char>(line[1]) == 0xBB &&
+                static_cast<unsigned char>(line[2]) == 0xBF) {
+                line.erase(0, 3);
+            }
+            if (line.compare(0, 6, "env=1|") == 0) {
+                const std::size_t eq = line.find('=', 6);
+                if (eq != std::string::npos && eq > 6) {
+                    const std::string name = line.substr(6, eq - 6);
+                    const std::string val = line.substr(eq + 1);
+                    if (!val.empty()) {
+                        SetIfMissing(name.c_str(), val);
+                    }
+                }
+            }
+        }
+    }
 #else
     const std::string root;
     const std::string configPath;
