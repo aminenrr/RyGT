@@ -980,6 +980,14 @@ namespace RyGT
         /// The text is a Segoe MDL2 Assets glyph (the settings button), not a word in capitals.
         public bool Glyph;
         static readonly int sweepStart = Environment.TickCount;
+        bool wanted = true;
+        public bool Wanted { get { return wanted; } }
+
+        protected override void SetVisibleCore(bool value)
+        {
+            wanted = value;
+            base.SetVisibleCore(value);
+        }
 
         public GlowButton()
         {
@@ -1263,7 +1271,7 @@ namespace RyGT
             int x = Left_;
             foreach (var button in buttons)
             {
-                if (!button.Visible) continue;
+                if (!button.Wanted) continue;
                 button.Location = new Point(x, ButtonsTop);
                 x += button.Width + Gap;
             }
