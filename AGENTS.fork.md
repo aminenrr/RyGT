@@ -78,25 +78,25 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 ## Fix log
 | date | repo | commit | what (switches) | default | CI | test |
 |---|---|---|---|---|---|---|
-| 2026-11-21 | shadGT | e466f72f | merge pr/trophies e099ee0 (shadGT#75), replaces ecfd132e (`RYGT_SCE_SYS_LAYERS`, `RYGT_TROPHY_TOAST`, `RYGT_TROPHY_TOAST_TEST`, `RYGT_TROPHY_PROGRESS_SD`, `RYGT_TROPHY_KEY_FILE`) | on (TOAST_TEST off) | pending | pending |
-| 2026-11-21 | shadGT | f12f7725 | 040a4ba6 -> PRT-SRTUSE (`RYGT_SRT_USE_LOG`) | on | pending | pending |
-| 2026-11-21 | shadGT | a764fce5 | 3ad40e69 -> PRT-VRAMAUTO (`RYGT_VRAM_AUTO_RESERVE_MB`) | 1024 | pending | pending |
-| 2026-11-21 | shadGT | e17e29d6 | 33b7a131 -> PRT-PREWARM port (`RYGT_PIPELINE_PREWARM`, `RYGT_PIPELINE_KEY_NORMALIZE`, `RYGT_SPLASH_SHADER_PROGRESS`, `RYGT_PREWARM_ONLY`, `RYGT_PREWARM_DIRTY_MARK`, `RYGT_PERF_LINE`) | GT7 on | pending | pending |
-| 2026-11-21 | shadGT | b927d93e | b026dbf3 -> Round 2 switch lines (trophy lines kept from e099ee0, no duplicates) | - | pending | - |
-| 2026-11-21 | shadGT | 35d6fefd | PRT-EXCL: GPU.precompile_shaders does not start PERF-038 (PERF-GT7-137 path) while PRT-PREWARM owns GT7 (`RYGT_PREWARM_EXCLUSIVE`) | on | pending | pending |
-| 2026-11-21 | shadGT | ac750fa3 | Round 3 item 1 PRT-STORECLEAN: delete this family's set-aside stores and old <serial>.vkpipelinecache (`RYGT_SHADER_STORE_CLEANUP`) | GT7 on | pending | pending |
-| 2026-11-21 | shadGT | abfa82d9 | Round 3 item 2 PRT-STORECOMPRESS: deflate new .spv, read both (`RYGT_SHADER_STORE_COMPRESS`) | GT7 on | pending | pending |
-| 2026-11-21 | shadGT | f8670eab | Round 3 item 8 PRT-UNBUILDABLE: skip records that failed to build on this renderer + driver (`RYGT_PREWARM_SKIP_UNBUILDABLE`) | on | pending | pending |
-| 2026-11-21 | RyGT | e785609 | merge RyGT#62 FIX-RT-019 single-callback SDL mixer + audio thread priority (was rygt7 2d7c06b) | always (no switch upstream) | pending | pending |
-| 2026-11-21 | RyGT | 9107128 | merge RyGT#59 PERF-RT-017 positioned I/O + guest read buffers (was rygt7 e928cf1) | always | pending | pending |
-| 2026-11-21 | RyGT | bf9c3a0 | merge RyGT#60 PERF-RT-018 app0 path cache + GT7 settings on direct start (was rygt7 4975ab9) | always | pending | pending |
-| 2026-11-21 | RyGT | 47f0480 | merge RyGT#61 FEAT-GT7-184 + FEAT-RT-020 ryty_prewarm tool and packaging (was rygt7 39750a0 + B7 CI bits), launcher 0.3.14 | toggle off | pending | pending |
-| 2026-11-21 | RyGT | 7dfa321 | B6 atomic GPU settings save (was rygt7 9e0a437) | always | pending | pending |
-| 2026-11-21 | RyGT | a3a407e | B5 HD rumble & triggers Open button on Controls (was rygt7 7413ad4 + cfd31ee) | - | pending | pending |
-| 2026-11-21 | RyGT | e3b7c3d | B3 PRT-HOMEBTN (was rygt7 1f6a94d) | always | pending | pending |
-| 2026-11-21 | RyGT | fc73662 | ryty_prewarm audit accepts RZS1 compressed .spv | always | pending | pending |
-| 2026-11-21 | RyGT | 8107690 | B1 splash prewarm + launcher graphics prewarm toggles, B2 pretranslate on (unchecked =0), B3 PRT-WARMSKIP (`RYGT_PREWARM_WARM_SKIP`), B4 watermark toggle (was rygt7 1b4fbb5, ecb2ec8, 1f6a94d, 10d6502) | splash on, launcher off | pending | pending |
-| 2026-11-21 | RyGT | (commit after this doc) | CI renderer branch pr/trophies -> pr-tests | - | pending | - |
+| 2026-11-21 | shadGT | e466f72f | merge pr/trophies e099ee0 (shadGT#75), replaces ecfd132e (`RYGT_SCE_SYS_LAYERS`, `RYGT_TROPHY_TOAST`, `RYGT_TROPHY_TOAST_TEST`, `RYGT_TROPHY_PROGRESS_SD`, `RYGT_TROPHY_KEY_FILE`) | on (TOAST_TEST off) | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | shadGT | f12f7725 | 040a4ba6 -> PRT-SRTUSE (`RYGT_SRT_USE_LOG`) | on | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | shadGT | a764fce5 | 3ad40e69 -> PRT-VRAMAUTO (`RYGT_VRAM_AUTO_RESERVE_MB`) | 1024 | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | shadGT | e17e29d6 | 33b7a131 -> PRT-PREWARM port (`RYGT_PIPELINE_PREWARM`, `RYGT_PIPELINE_KEY_NORMALIZE`, `RYGT_SPLASH_SHADER_PROGRESS`, `RYGT_PREWARM_ONLY`, `RYGT_PREWARM_DIRTY_MARK`, `RYGT_PERF_LINE`) | GT7 on | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | shadGT | b927d93e | b026dbf3 -> Round 2 switch lines (trophy lines kept from e099ee0, no duplicates) | - | run 44911191881 green, artifact 14712320793 | - |
+| 2026-11-21 | shadGT | 35d6fefd | PRT-EXCL: GPU.precompile_shaders does not start PERF-038 (PERF-GT7-137 path) while PRT-PREWARM owns GT7 (`RYGT_PREWARM_EXCLUSIVE`) | on | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | shadGT | ac750fa3 | Round 3 item 1 PRT-STORECLEAN: delete this family's set-aside stores and old <serial>.vkpipelinecache (`RYGT_SHADER_STORE_CLEANUP`) | GT7 on | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | shadGT | abfa82d9 | Round 3 item 2 PRT-STORECOMPRESS: deflate new .spv, read both (`RYGT_SHADER_STORE_COMPRESS`) | GT7 on | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | shadGT | f8670eab | Round 3 item 8 PRT-UNBUILDABLE: skip records that failed to build on this renderer + driver (`RYGT_PREWARM_SKIP_UNBUILDABLE`) | on | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | RyGT | e785609 | merge RyGT#62 FIX-RT-019 single-callback SDL mixer + audio thread priority (was rygt7 2d7c06b) | always (no switch upstream) | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | RyGT | 9107128 | merge RyGT#59 PERF-RT-017 positioned I/O + guest read buffers (was rygt7 e928cf1) | always | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | RyGT | bf9c3a0 | merge RyGT#60 PERF-RT-018 app0 path cache + GT7 settings on direct start (was rygt7 4975ab9) | always | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | RyGT | 47f0480 | merge RyGT#61 FEAT-GT7-184 + FEAT-RT-020 ryty_prewarm tool and packaging (was rygt7 39750a0 + B7 CI bits), launcher 0.3.14 | toggle off | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | RyGT | 7dfa321 | B6 atomic GPU settings save (was rygt7 9e0a437) | always | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | RyGT | a3a407e | B5 HD rumble & triggers Open button on Controls (was rygt7 7413ad4 + cfd31ee) | - | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | RyGT | e3b7c3d | B3 PRT-HOMEBTN (was rygt7 1f6a94d) | always | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | RyGT | fc73662 | ryty_prewarm audit accepts RZS1 compressed .spv | always | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | RyGT | 8107690 | B1 splash prewarm + launcher graphics prewarm toggles, B2 pretranslate on (unchecked =0), B3 PRT-WARMSKIP (`RYGT_PREWARM_WARM_SKIP`), B4 watermark toggle (was rygt7 1b4fbb5, ecb2ec8, 1f6a94d, 10d6502) | splash on, launcher off | run 44911191881 green, artifact 14712320793 | pending |
+| 2026-11-21 | RyGT | c7b3be4, fa58b58 | CI renderer branch pr/trophies -> pr-tests | - | run 44911191881 green, artifact 14712320793 | - |
 | planned | shadGT | - | PRT-STALL options (Round 3 item 4), after owner pick | - | - | - |
 
 Not ported: rygt7 10d6502 "Verbose logs" toggle (shadGT has no RYGT_LOG_VERBOSE reader; shadgt7 d9c5c52c PRT-LOGS
