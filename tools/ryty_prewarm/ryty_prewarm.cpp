@@ -34,6 +34,8 @@
 
 namespace fs = std::filesystem;
 
+constexpr std::uint32_t CompressedSpirvMagic = 0x31535A52u;
+
 namespace {
 
 using SteadyClock = std::chrono::steady_clock;
@@ -508,6 +510,10 @@ StoreAudit auditDirectSets(
 
                 std::uint32_t magic = 0;
                 std::memcpy(&magic, headerBuf, 4);
+                if (magic == CompressedSpirvMagic) {
+                    CloseHandle(hFile);
+                    continue;
+                }
                 if (magic != 0x07230203u) {
                     CloseHandle(hFile);
                     aInvalid.fetch_add(1, std::memory_order_relaxed);
