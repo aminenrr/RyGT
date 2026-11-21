@@ -1586,6 +1586,17 @@ namespace RyGT
             CustomEnvironment.Apply(start, new Settings(GameInfo.GT7.IniPath(root)).Env);
             string stamp = PrewarmStamp(root);
             bool warmSkip = start.EnvironmentVariables["RYGT_PREWARM_WARM_SKIP"] != "0";
+            // PRT-WARMSKIP-HONEST (Round 4): no pipeline records at all is not "nothing new". On
+            // 11-21 the splash toggle off also stopped recording, the folder never existed and the
+            // skip line said nothing new was recorded. Say what is missing; the pass still runs for
+            // the compute recipes and stamps nothing (a later session's records then get built).
+            int records = CountPrewarmRecords(root);
+            if (records == 0)
+            {
+                Log("PRT-WARMSKIP: no recorded graphics pipelines yet (shaders\\CUSA24769.prewarm has no records); play a session with recording on first. Running the pass for compute only.");
+                warmSkip = false;
+                stamp = null;
+            }
             if (warmSkip && stamp != null && !File.Exists(dirtyFile) && File.Exists(stampFile))
             {
                 string old = null;
@@ -1655,6 +1666,19 @@ namespace RyGT
                 ShowGt7PrewarmCancel(false);
                 try { File.Delete(cancelFile); } catch { }
             }
+        }
+
+        /// PRT-WARMSKIP-HONEST: pipeline records (.pwk) in shaders\CUSA24769.prewarm, any GPU folder;
+        /// -1 when the folder could not be read.
+        static int CountPrewarmRecords(string root)
+        {
+            try
+            {
+                string dir = Path.Combine(Path.Combine(root, "shaders"), "CUSA24769.prewarm");
+                if (!Directory.Exists(dir)) return 0;
+                return Directory.GetFiles(dir, "*.pwk", SearchOption.AllDirectories).Length;
+            }
+            catch { return -1; }
         }
 
         /// PRT-WARMSKIP: which renderer a clean launcher pass ran (size and write time of

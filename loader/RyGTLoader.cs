@@ -2620,7 +2620,7 @@ namespace RyGT
                 shaders = Section(shadersPage, "Compiling");
                 AddOption(shaders, "Rebuild translated shaders in the background after a renderer update (about 30 MB a track)", "GPU", "shader_pretranslate", true);
                 AddOption(shaders, "Precompile shaders on the splash screen (the pipelines recorded while playing)", "GPU", "splash_prewarm", true);
-                shaders.Controls.Add(Hint("Builds every pipeline seen in earlier sessions while the splash screen shows (RYGT_PIPELINE_PREWARM). Unchecked sends RYGT_PIPELINE_PREWARM=0."));
+                shaders.Controls.Add(Hint("Builds every pipeline seen in earlier sessions while the splash screen shows (RYGT_PIPELINE_PREWARM). Unchecked only skips that build: the game still records new pipelines for the next splash or launcher pass (RYGT_PREWARM_RECORD=0 stops recording)."));
                 AddOption(shaders, "Precompile graphics shaders in the launcher before starting the game (every CPU core)", "GPU", "launcher_graphics_prewarm", false);
                 shaders.Controls.Add(Hint("Starts the renderer hidden with the game's GPU setup, builds the recorded graphics pipelines and compute recipes, saves the shader cache, then starts the game. Skipped when nothing new was recorded since the last clean pass (RYGT_PREWARM_WARM_SKIP=0 always runs it)."));
                 AddGt7PrewarmOption(shaders);
