@@ -14,6 +14,10 @@ def run(*args):
 def prepare(destination):
     root = Path(__file__).resolve().parent.parent
     source = json.loads((root / "renderer/source.json").read_text(encoding="utf-8"))
+    if os.environ.get("RYGT_RENDERER_REPOSITORY"):
+        source["repository"] = os.environ["RYGT_RENDERER_REPOSITORY"]
+        source["branch"] = os.environ.get("RYGT_RENDERER_BRANCH", source["branch"])
+        source["commit"] = "HEAD"
     revision = source["commit"]
     expected = os.environ.get("RENDERER_SHA")
     if expected and not re.fullmatch(r"[0-9a-f]{40}", expected):

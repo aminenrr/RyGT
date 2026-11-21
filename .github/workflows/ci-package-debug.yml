@@ -37,8 +37,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          repository: RyGT-Team/RyGT
-          ref: ${{ github.repository == 'RyGT-Team/RyGT' && github.event_name == 'push' && github.sha || inputs.source_sha || 'development' }}
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Select exact GitHub runtime revision
         id: controller
@@ -50,6 +50,9 @@ jobs:
           SOURCE_OVERRIDE_SHA: ${{ steps.controller.outputs.commit }}
           RENDERER_OVERRIDE_SHA: ${{ inputs.renderer_sha }}
           GITHUB_TOKEN: ${{ github.token }}
+          RYGT_SOURCE_REPO: aminenrr/RyGT
+          RYGT_RENDERER_REPOSITORY: https://github.com/aminenrr/shadGT.git
+          RYGT_RENDERER_BRANCH: pr/trophies
         run: python3 ci/github-registry/registry_ci.py resolve debug-ci
   windows:
     needs: [source, tests]
@@ -78,6 +81,7 @@ jobs:
           git init
           git config core.longpaths true
           git remote add origin https://github.com/RyGT-Team/RyGT.git
+          git remote set-url origin https://github.com/aminenrr/RyGT.git
           git fetch --depth=1 origin $env:SOURCE_SHA
           if ($LASTEXITCODE) { throw 'GitHub fetch failed' }
           git checkout --detach FETCH_HEAD
@@ -93,6 +97,8 @@ jobs:
           Set-Location $env:RYGT_CI_ROOT
           python -m unittest discover -s ci/tests -p 'test_*.py'
           if ($LASTEXITCODE) { throw 'CI regression tests failed' }
+          $env:RYGT_RENDERER_REPOSITORY = 'https://github.com/aminenrr/shadGT.git'
+          $env:RYGT_RENDERER_BRANCH = 'pr/trophies'
           . ./ci/setup-hosted-windows.ps1
           & ./ci/build-windows.ps1 -Target Launcher -Flavor Diagnostics
           & ./ci/build-windows.ps1 -Target Renderer -Flavor Diagnostics
@@ -130,6 +136,7 @@ jobs:
           git init source
           cd source
           git remote add origin https://github.com/RyGT-Team/RyGT.git
+          git remote set-url origin https://github.com/aminenrr/RyGT.git
           git fetch --depth=1 origin "$SOURCE_SHA"
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
@@ -158,7 +165,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          repository: RyGT-Team/RyGT
+          repository: ${{ github.repository }}
           ref: ${{ needs.source.outputs.controller_commit }}
           persist-credentials: false
       - name: Fetch exact GitHub source
@@ -168,6 +175,7 @@ jobs:
           git init source
           cd source
           git remote add origin https://github.com/RyGT-Team/RyGT.git
+          git remote set-url origin https://github.com/aminenrr/RyGT.git
           git fetch --depth=1 origin "$SOURCE_SHA"
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
@@ -181,8 +189,11 @@ jobs:
           CI_COMMIT_SHA: ${{ needs.source.outputs.commit }}
           CI_PIPELINE_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
           CI_CHANNEL: debug-ci
+          RYGT_RENDERER_REPOSITORY: https://github.com/aminenrr/shadGT.git
         run: python3 ci/package.py
       - name: Verify package provenance and checksum
+        env:
+          RYGT_RENDERER_REPOSITORY: https://github.com/aminenrr/shadGT.git
         run: python3 ci/github-registry/registry_ci.py verify debug-ci
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         id: package_artifact

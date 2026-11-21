@@ -231,6 +231,9 @@ def assemble(commit, flavor, channel, suffix):
     renderer = verify_bundle(renderer_folder, 'libSceVideoOut.prx', commit, flavor)
     root = Path(__file__).resolve().parent.parent
     pin = json.loads((root / 'renderer/source.json').read_text())
+    if os.environ.get('RYGT_RENDERER_REPOSITORY'):
+        pin['repository'] = os.environ['RYGT_RENDERER_REPOSITORY']
+        pin['commit'] = 'HEAD'
     source_file = verify_artifact(renderer_folder, 'CI-SOURCE.txt', commit, 'data')
     source = source_file.read_text(encoding='utf-8-sig')
     lines = source.splitlines()

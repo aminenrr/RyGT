@@ -11,7 +11,9 @@ import urllib.error
 import urllib.request
 import zipfile
 
-SOURCE_API = 'https://api.github.com/repos/RyGT-Team/RyGT'
+SOURCE_API = 'https://api.github.com/repos/' + os.environ.get('RYGT_SOURCE_REPO', 'RyGT-Team/RyGT')
+FORK_RENDERER = os.environ.get('RYGT_RENDERER_REPOSITORY', '')
+FORK_RENDERER_BRANCH = os.environ.get('RYGT_RENDERER_BRANCH', '')
 RENDERER_API = 'https://api.github.com/repos/RyGT-Team/shadGT'
 CHANNELS = ('ci', 'debug-ci')
 
@@ -32,6 +34,10 @@ def version(commit, renderer):
 
 
 def renderer_revision(commit):
+    if FORK_RENDERER:
+        api = 'https://api.github.com/repos/' + FORK_RENDERER.split('github.com/')[1].removesuffix('.git')
+        with urllib.request.urlopen(github_request(api + '/commits/' + FORK_RENDERER_BRANCH), timeout=60) as response:
+            return json.load(response)['sha']
     with urllib.request.urlopen('https://raw.githubusercontent.com/RyGT-Team/RyGT/' + commit + '/renderer/source.json', timeout=60) as response:
         policy = json.load(response)
     if (not isinstance(policy, dict) or not isinstance(policy.get('repository'), str) or
@@ -105,7 +111,7 @@ def verify(channel=None):
         with zipfile.ZipFile(archive) as package:
             build = json.loads(package.read(archive.stem + '/BUILD_INFO.txt'))
         source = build.get('renderer_source', '').splitlines()
-        if (len(source) != 2 or source[0].lower() != 'https://github.com/rygt-team/shadgt.git' or
+        if (len(source) != 2 or source[0].lower() != (FORK_RENDERER or 'https://github.com/rygt-team/shadgt.git').lower() or
                 source[1] != renderer):
             raise RuntimeError('Package renderer differs from resolved CI revision')
         packages.append((channel, archive, checksum, digest))
