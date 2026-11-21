@@ -2,7 +2,7 @@ name: RyGT Diagnostics CI package
 run-name: RyGT Diagnostics development build
 on:
   push:
-    branches: [development, pr-tests]
+    branches: [development]
   workflow_call:
     inputs:
       renderer_sha:
