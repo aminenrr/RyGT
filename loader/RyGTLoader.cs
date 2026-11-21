@@ -1974,6 +1974,7 @@ namespace RyGT
         public bool HddStreaming = false;
         public bool ShowAdvanced = false; // FEAT-GTS-438: the Advanced page; FEAT-GTS-266: hidden by default
         public bool PromptObsolete = true; // FEAT-GTS-469: offer to remove obsolete config entries
+        public bool Watermark = false;
         public List<EnvVar> Env = new List<EnvVar>(); // FEAT-GTS-433
         readonly string path;
 
@@ -2001,6 +2002,7 @@ namespace RyGT
                 else if (key == "hdd_streaming") HddStreaming = value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
                 else if (key == "show_advanced") ShowAdvanced = value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
                 else if (key == "prompt_obsolete") PromptObsolete = !(value == "0" || value.Equals("false", StringComparison.OrdinalIgnoreCase));
+                else if (key == "watermark") Watermark = value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
             }
         }
 
@@ -2011,7 +2013,7 @@ namespace RyGT
         /// prompt_obsolete line, as ryGT7's launcher wrote it.
         public bool IsGt7 { get { return path != null && Path.GetFileName(path).StartsWith(GameInfo.GT7.TitleId, StringComparison.OrdinalIgnoreCase); } }
 
-        static readonly string[] OwnKeys = { "game", "update", "modules", "fonts", "stdout_level", "hdd_streaming", "show_advanced", "prompt_obsolete", "env" };
+        static readonly string[] OwnKeys = { "game", "update", "modules", "fonts", "stdout_level", "hdd_streaming", "show_advanced", "prompt_obsolete", "watermark", "env" };
 
         /// Writes this class's lines, then every other line of the file as it was (online play's keys, which
         /// OnlinePlay keeps in the same file, and anything else).
@@ -2022,6 +2024,7 @@ namespace RyGT
             if (!IsGt7) lines.Add("hdd_streaming=" + (HddStreaming ? "1" : "0"));
             lines.Add("show_advanced=" + (ShowAdvanced ? "1" : "0"));
             if (!IsGt7) lines.Add("prompt_obsolete=" + (PromptObsolete ? "1" : "0"));
+            if (IsGt7) lines.Add("watermark=" + (Watermark ? "1" : "0"));
             foreach (var entry in Env) lines.Add("env=" + CustomEnvironment.Format(entry));
             if (File.Exists(path))
                 foreach (var line in File.ReadAllLines(path))
@@ -2615,17 +2618,11 @@ namespace RyGT
             else
             {
                 shaders = Section(shadersPage, "Compiling");
-                // FEAT-GTS-290: ryGT7 had this one on its Graphics page, off unless checked.
-                // PERF-GT7-111/117: shader pre-translation (RYGT_MANIFEST_RECORD / RYGT_MANIFEST_PRETRANSLATE).
-                AddOption(shaders, "Rebuild translated shaders in the background after a renderer update (about 30 MB a track)", "GPU", "shader_pretranslate", false);
-                // FIX-RT-022: GT Sport's option (GPU.precompile_shaders, which GT7 follows from shadGT's
-                // PERF-GT7-137): every stored pipeline is built while the splash screen shows. Off for GT7
-                // (EnsureGT7Defaults): after a driver or renderer update the splash waited 9 to 14 minutes
-                // for ~15,000 pipelines (RTX 4070), and with a warm cache races ran no smoother. It replaces
-                // the compile pack option (PERF-GT7-108), which compiled nothing: the pack holds shader
-                // object sets, and GT7 runs without shader objects.
-                AddOption(shaders, "Precompile shaders on the splash screen", "GPU", "precompile_shaders", false);
-                shaders.Controls.Add(Hint("The splash screen waits until every stored shader is built: up to 15 minutes after a driver or ryGT update."));
+                AddOption(shaders, "Rebuild translated shaders in the background after a renderer update (about 30 MB a track)", "GPU", "shader_pretranslate", true);
+                AddOption(shaders, "Precompile shaders on the splash screen (the pipelines recorded while playing)", "GPU", "splash_prewarm", true);
+                shaders.Controls.Add(Hint("Builds every pipeline seen in earlier sessions while the splash screen shows (RYGT_PIPELINE_PREWARM). Unchecked sends RYGT_PIPELINE_PREWARM=0."));
+                AddOption(shaders, "Precompile graphics shaders in the launcher before starting the game (every CPU core)", "GPU", "launcher_graphics_prewarm", false);
+                shaders.Controls.Add(Hint("Starts the renderer hidden with the game's GPU setup, builds the recorded graphics pipelines and compute recipes, saves the shader cache, then starts the game. Skipped when nothing new was recorded since the last clean pass (RYGT_PREWARM_WARM_SKIP=0 always runs it)."));
                 AddGt7PrewarmOption(shaders);
             }
             // What the game does while a new shader compiles during play (GPU.compile_mode): GT Sport
@@ -2725,6 +2722,18 @@ namespace RyGT
             };
             logging.Controls.Add(advancedShown);
             logging.Controls.Add(Hint("Hiding it keeps the switches already set there; they still apply when the game starts."));
+            if (gt7)
+            {
+                var watermark = new ToggleRow { Text = "Show the build watermark in game", Checked = settings.Watermark };
+                watermark.CheckedChanged += delegate
+                {
+                    settings.Watermark = watermark.Checked;
+                    try { settings.Save(); }
+                    catch (Exception e) { MessageBox.Show(this, "Could not save the setting: " + e.Message); }
+                };
+                logging.Controls.Add(watermark);
+                logging.Controls.Add(Hint("The build and renderer revision in the bottom corner. Off sends SHADGT_WATERMARK=0. From the next launch."));
+            }
         }
 
         /// FEAT-GTS-437: Advanced, the experimental renderer and runtime switches (RYGT_*, SHADGT_* and

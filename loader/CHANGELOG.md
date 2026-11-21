@@ -10,6 +10,15 @@ CI fails when the two disagree.
 
 * pr-tests: RyGT-Team/RyGT#61 merged (FEAT-GT7-184, GustavoPeetry): GT7 can optionally audit its shader store
   and pre-warm recorded Vulkan compute pipelines before Play. The Shaders setting defaults to off.
+* pr-tests: GT7's Shaders page has "Precompile shaders on the splash screen (the pipelines recorded while playing)"
+  (`GPU.splash_prewarm`, on; unchecked sends `RYGT_PIPELINE_PREWARM=0`) and "Precompile graphics shaders in the launcher
+  before starting the game" (`GPU.launcher_graphics_prewarm`, off): GT7.exe runs hidden with `RYGT_PREWARM_ONLY=1`,
+  status "Precompiling graphics shaders (n/N)" with Cancel, then the game starts. PRT-WARMSKIP skips that pass while
+  the renderer is the one a clean pass stamped (prewarm.stamp) and no session wrote prewarm.dirty
+  (`RYGT_PREWARM_WARM_SKIP=0` always runs it). The splash precompile of FIX-RT-022 (`GPU.precompile_shaders`) is not
+  shown for GT7: the renderer's PRT-PREWARM builds the stored pipelines (shadGT pr-tests `RYGT_PREWARM_EXCLUSIVE`).
+  "Rebuild translated shaders" is on by default for GT7; unchecked sends `RYGT_MANIFEST_RECORD=0` and
+  `RYGT_MANIFEST_PRETRANSLATE=0`. About > Logging: "Show the build watermark in game" (off sends `SHADGT_WATERMARK=0`).
 
 ## 0.3.13 - 2026-11-21
 
