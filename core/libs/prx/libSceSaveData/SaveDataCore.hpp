@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <chrono>
@@ -1093,8 +1094,31 @@ int set_memory_internal(const SaveDataMemorySet2* set_param) {
         }
     }
     MemorySlot updated = it->second;
+    static const bool diff_log = [] {
+        const char* env = std::getenv("RYGT_SDMEM_LOG");
+        return !(env && env[0] == '0');
+    }();
     for (std::uint32_t i = 0; i < count; i++) {
         const MemoryData& data = descriptors[i];
+        if (diff_log && data.buf_size != 0) {
+            const auto* before = reinterpret_cast<const unsigned char*>(updated.data.data() + data.offset);
+            const auto* after = static_cast<const unsigned char*>(data.buf);
+            std::size_t changed = 0, shown = 0;
+            char list[512] = {};
+            std::size_t used = 0;
+            for (std::size_t b = 0; b < data.buf_size; b++) {
+                if (before[b] == after[b]) continue;
+                changed++;
+                if (shown < 24 && used + 32 < sizeof(list)) {
+                    used += static_cast<std::size_t>(std::snprintf(list + used, sizeof(list) - used, " 0x%zx:%02x->%02x",
+                                                                   static_cast<std::size_t>(data.offset) + b, before[b], after[b]));
+                    shown++;
+                }
+            }
+            std::fprintf(stderr, "[SAVEDATA:core] PRT-SDMEM: set offset 0x%zx size 0x%zx, %zu bytes changed%s%s\n",
+                         static_cast<std::size_t>(data.offset), static_cast<std::size_t>(data.buf_size), changed,
+                         list, changed > shown ? " ..." : "");
+        }
         std::memcpy(updated.data.data() + data.offset, data.buf, data.buf_size);
     }
     if (set_param->param != nullptr) {
