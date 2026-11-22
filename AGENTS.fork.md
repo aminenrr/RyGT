@@ -109,6 +109,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-22 | shadGT | 916203d | Round 4b PRT-AF forced anisotropic filtering on GT7 trilinear colour samplers (`RYGT_FORCE_ANISO`) | 16 | pending | pending |
 | 2026-11-22 | shadGT | c054cb3 | Round 4b PRT-PRODOWN area-average downscale of a frame larger than the window, optional RCAS (`RYGT_PRO_DOWNSCALE`, `RYGT_PRO_RCAS`) | on / 0 | pending | pending |
 | 2026-11-22 | shadGT | 569d6fe | Round 4b PRT-STALLLOG one line per 500 ms+ stall (`RYGT_STALL_LOG`) | on | pending | pending |
+| 2026-11-22 | shadGT | 10a40a8 | Round 4b PRT-PHOTOWB: pictures in CPU-read memory go back even over the VRAM budget; dispatch-stored ones (up to 64 MB) outside a race too; GT7 photos were black (r4a had no FIX-GT7-041 write-back lines, shadgt7 b5 logs had them; shadGT dropped that path for a budget-checked one) (`RYGT_PHOTO_WRITEBACK`) | on | pending | pending |
 | 2026-11-22 | RyGT | e918871 | Round 4b PRT-AUDITRZS: audit no longer rejects compressed .spv whose size is not a multiple of 4 (cause of spv_invalid 12912/17103) | always | pending | pending |
 | 2026-11-22 | RyGT | 51168a1 | Round 4b PRT-NOBANNER: automatic update notice hidden (`RYGT_UPDATE_NOTICE=1` in the launcher's own environment shows it; manual check still shows) | hidden | pending | pending |
 | 2026-11-22 | RyGT | ee663a5 | Round 4b PRT-SDMEM: logs bytes changed by each memory save write, for the Opening Movie reset (`RYGT_SDMEM_LOG`) | on | pending | pending |
@@ -140,7 +141,8 @@ Owner go 2026-11-22 00:45 GMT. Findings before code (logs work/logs/r4a, r4b-vra
 - Slow menus = VRAM over budget: run 2 peak 8609 MB vs Auto 6993 (driver budget 6342), spilled to system memory. Test with RYGT_VRAM_AUTO_RESERVE_MB=1650 (budget 6367): peak 5731 MB, menus better; back to map still 1 to 2 s "Loading". Fix: PRT-VRAMAUTO default 0. Remaining wait traced by PRT-STALLLOG.
 - Opening Movie: GT7 never creates an AvPlayer at boot (no [AVP] lines), so the game reads the option as Off. It reads the memory save (sce_sdmemory/268435456/memory.dat) then writes it 3 times at boot. PRT-SDMEM logs which bytes; fix next round.
 - Item 3 cause: ryty_prewarm rejected .spv sizes not a multiple of 4 before checking the RZS1 magic.
-- Item 7 test only (RYGT_PREWARM_EXCLUSIVE=0). Item 10 photo mode black parked for Round 5.
+- Item 7 test only (RYGT_PREWARM_EXCLUSIVE=0).
+- Item 10 photo mode black (owner asked to include it 01:06 GMT): shadgt7 wrote back every colour target at 0xf0.. (FIX-GT7-041), shadGT only within the VRAM budget, and VRAM sat over budget in r4a. PRT-PHOTOWB, first CI 44968563909 cancelled for it.
 
 ## Round 4b plan (owner list 2026-11-21, handoff to the next agent)
 Priority order. Each item: own switch in shadGT src/video_core/rygt_switches.cpp (or launcher setting), Fix log row, one CI run (push shadGT first, then RyGT; pr-tests push runs ci-package-release.yml).
