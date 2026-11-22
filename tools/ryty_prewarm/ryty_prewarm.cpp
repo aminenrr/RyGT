@@ -478,7 +478,7 @@ StoreAudit auditDirectSets(
 
                 const auto& entry = spvEntries[idx];
                 const std::uint64_t sz = entry.size;
-                if (sz < 20 || (sz & 3u) != 0) {
+                if (sz < 8) {
                     aInvalid.fetch_add(1, std::memory_order_relaxed);
                     continue;
                 }
@@ -514,7 +514,7 @@ StoreAudit auditDirectSets(
                     CloseHandle(hFile);
                     continue;
                 }
-                if (magic != 0x07230203u) {
+                if (magic != 0x07230203u || sz < 20 || (sz & 3u) != 0) {
                     CloseHandle(hFile);
                     aInvalid.fetch_add(1, std::memory_order_relaxed);
                     continue;
