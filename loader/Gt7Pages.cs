@@ -252,6 +252,16 @@ namespace RyGT
             for (int i = 0; i < proBoxKeys.Length; i++) proBoxes[i] = AddOption(pro, proBoxTexts[i], "GPU", proBoxKeys[i], false);
             pro.Controls.Add(Hint("The game's own PS4 Pro settings. A mode ticks the boxes as that console has them; change a box to make " +
                                   "your own (Custom). Every box costs GPU time, the checkerboard most. Applies at the next game start."));
+            var proRcas = new Slider { Minimum = 0, Maximum = 21, SmallChange = 1, LargeChange = 4, Width = 330, AccessibleName = "RCAS sharpening" };
+            proRcas.Format = delegate(int step) { return step == 0 ? "Off" : ProRcasText(step); };
+            proRcas.Value = ProRcasStep(ReadStringSetting("GPU", "pro_rcas", "0.30"));
+            proRcas.ValueChanged += delegate
+            {
+                try { WriteSetting("GPU", "pro_rcas", proRcas.Value == 0 ? "off" : ProRcasText(proRcas.Value)); }
+                catch (Exception e) { MessageBox.Show(this, "Could not save the setting: " + e.Message); }
+            };
+            pro.Controls.Add(new SettingRow("RCAS sharpening", proRcas));
+            pro.Controls.Add(Hint("Sharpens the PS4 Pro picture after it is scaled to the window (RYGT_PRO_RCAS). Off or 0.00 to 1.00, 0.30 by default. Applies at the next game start."));
             // Checked on an NVIDIA RTX 4070 only, where the game alone used about 5 GB of video memory in a race with
             // everything on. With the checkerboard a race can drop below 30 fps. Without the checkerboard, the boxes
             // run in the PS4 mode, except all five together: that is the PS4 Pro 1080p TV mode.
@@ -770,6 +780,19 @@ namespace RyGT
             panel.Controls.Add(row);
         }
 
+
+        static string ProRcasText(int step)
+        {
+            return ((step - 1) * 0.05).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        static int ProRcasStep(string setting)
+        {
+            if (string.IsNullOrEmpty(setting) || setting == "off") return 0;
+            double value;
+            if (!double.TryParse(setting, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value)) return 7;
+            return 1 + (int)Math.Round(Math.Max(0.0, Math.Min(1.0, value)) / 0.05);
+        }
 
         /// A GPU section setting from the game's settings file, or null.
         static object GpuSetting(string root, string key)
@@ -1552,6 +1575,15 @@ namespace RyGT
                 if (proOptionsOn.Count != 0) start.EnvironmentVariables["RYGT_NEO_EXTRAS"] = string.Join(",", proOptionsOn);
                 else start.EnvironmentVariables.Remove("RYGT_NEO_EXTRAS");
             }
+            if (string.IsNullOrEmpty(start.EnvironmentVariables["RYGT_PRO_RCAS"]))
+            {
+                string rcasSetting = GpuSetting(root, "pro_rcas") as string ?? "0.30";
+                int rcasStep = ProRcasStep(rcasSetting);
+                start.EnvironmentVariables["RYGT_PRO_RCAS"] = rcasStep == 0 ? "0" : ProRcasText(rcasStep);
+            }
+            object splashHold = GpuSetting(root, "splash_hold_prewarm");
+            if (splashHold is bool && !(bool)splashHold && string.IsNullOrEmpty(start.EnvironmentVariables["RYGT_SPLASH_HOLD_PREWARM"]))
+                start.EnvironmentVariables["RYGT_SPLASH_HOLD_PREWARM"] = "0";
             object splashPrewarm = GpuSetting(root, "splash_prewarm");
             if (splashPrewarm is bool && !(bool)splashPrewarm && string.IsNullOrEmpty(start.EnvironmentVariables["RYGT_PIPELINE_PREWARM"]))
                 start.EnvironmentVariables["RYGT_PIPELINE_PREWARM"] = "0";
@@ -1560,6 +1592,7 @@ namespace RyGT
         }
 
         volatile bool graphicsPrewarmRunning;
+        static volatile bool launcherPrewarmClean;
 
         /// PRT-PREWARM-ONLY: GT7.exe started hidden with the game's own environment plus
         /// RYGT_PREWARM_ONLY=1 builds the recorded pipelines and compute recipes on every core, saves the
@@ -1568,6 +1601,7 @@ namespace RyGT
         /// stamped and no session wrote prewarm.dirty since. False when cancelled.
         bool RunGraphicsPrewarm()
         {
+            launcherPrewarmClean = false;
             string exe = Path.Combine(root, "GT7.exe");
             if (!File.Exists(exe)) return true;
             try { if (!GameExe.IsPrepared(exe)) GameExe.PrepareGt7(exe); } catch { }
@@ -1604,6 +1638,7 @@ namespace RyGT
                 if (old == stamp)
                 {
                     Log("PRT-WARMSKIP: graphics prewarm skipped (nothing new recorded since the last clean pass, same renderer).");
+                    launcherPrewarmClean = true;
                     return true;
                 }
             }
@@ -1648,6 +1683,7 @@ namespace RyGT
                     if (gt7PrewarmCancelled || code == 2) return false;
                     if (code == 0 && done != null && done.StartsWith("PRT-PREWARM-DONE", StringComparison.Ordinal) && stamp != null)
                     {
+                        launcherPrewarmClean = true;
                         try { File.Delete(dirtyFile); File.WriteAllText(stampFile, stamp); Log("PRT-WARMSKIP: stamped (" + stamp + ")."); }
                         catch (Exception e) { Log("PRT-WARMSKIP: stamp not written: " + e.Message); }
                     }
@@ -1757,6 +1793,10 @@ namespace RyGT
                     { WorkingDirectory = root, UseShellExecute = false };
                     start.EnvironmentVariables["RYGT_LOG_DIRECTORY"] = logDirectory;
                     ApplyGt7RendererEnvironment(root, start);
+                    bool prewarmClean = launcherPrewarmClean;
+                    launcherPrewarmClean = false;
+                    if (prewarmClean && string.IsNullOrEmpty(start.EnvironmentVariables["RYGT_LAUNCHER_PREWARM_CLEAN"]))
+                        start.EnvironmentVariables["RYGT_LAUNCHER_PREWARM_CLEAN"] = "1";
                     // FEAT-GTS-254: the Advanced page's switches and other variables last, so they win.
                     trophyKeyFile = TrophyStore.ApplyEnvironment(root, start);
                     int customCount = CustomEnvironment.Apply(start, new Settings(GameInfo.GT7.IniPath(root)).Env);

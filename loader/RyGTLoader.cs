@@ -788,6 +788,7 @@ namespace RyGT
         public int TickFrequency = 10, SmallChange = 1, LargeChange = 10;
         /// Shown after the value ("%").
         public string Suffix = "";
+        public Func<int, string> Format;
         public event EventHandler ValueChanged;
 
         public Slider()
@@ -859,7 +860,7 @@ namespace RyGT
                 g.FillRectangle(done, track.X, track.Y, x - track.X, track.Height);
             float knob = Focused ? 14 : 12;
             using (var fill = new SolidBrush(Enabled ? Color.White : Dark.Disabled)) g.FillEllipse(fill, x - knob / 2, track.Y + 1 - knob / 2, knob, knob);
-            TextRenderer.DrawText(g, value + Suffix, Dark.Caps(9f), new Rectangle(track.Right + 8, 0, Width - track.Right - 8, Height),
+            TextRenderer.DrawText(g, Format != null ? Format(value) : value + Suffix, Dark.Caps(9f), new Rectangle(track.Right + 8, 0, Width - track.Right - 8, Height),
                                   Enabled ? Dark.Text : Dark.Disabled, TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
         }
     }
@@ -2621,6 +2622,8 @@ namespace RyGT
                 AddOption(shaders, "Rebuild translated shaders in the background after a renderer update (about 30 MB a track)", "GPU", "shader_pretranslate", true);
                 AddOption(shaders, "Precompile shaders on the splash screen (the pipelines recorded while playing)", "GPU", "splash_prewarm", true);
                 shaders.Controls.Add(Hint("Builds every pipeline seen in earlier sessions while the splash screen shows (RYGT_PIPELINE_PREWARM). Unchecked only skips that build: the game still records new pipelines for the next splash or launcher pass (RYGT_PREWARM_RECORD=0 stops recording)."));
+                AddOption(shaders, "Hold the game on the splash screen while those pipelines build (every CPU core)", "GPU", "splash_hold_prewarm", true);
+                shaders.Controls.Add(Hint("The game waits on the splash screen with a progress bar until the recorded pipelines are built, then starts. Unchecked: they build in the background on up to 4 threads while the game starts (RYGT_SPLASH_HOLD_PREWARM=0)."));
                 AddOption(shaders, "Precompile graphics shaders in the launcher before starting the game (every CPU core)", "GPU", "launcher_graphics_prewarm", false);
                 shaders.Controls.Add(Hint("Starts the renderer hidden with the game's GPU setup, builds the recorded graphics pipelines and compute recipes, saves the shader cache, then starts the game. Skipped when nothing new was recorded since the last clean pass (RYGT_PREWARM_WARM_SKIP=0 always runs it)."));
                 AddGt7PrewarmOption(shaders);
