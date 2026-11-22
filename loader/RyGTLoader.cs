@@ -2863,12 +2863,19 @@ namespace RyGT
         }
 
 
+        static bool UpdateNoticeOn()
+        {
+            string value = Environment.GetEnvironmentVariable("RYGT_UPDATE_NOTICE");
+            return value != null && value.Length > 0 && value[0] != '0';
+        }
+
         void ShowUpdate(GameKind game, string installed, string channel, ReleaseInfo latest, Exception error, bool manual)
         {
             if (target != game) return; // FEAT-GTS-290: the game changed meanwhile
             if (channel != UpdateChannel()) return; // the channel changed meanwhile; that check shows its own
             if (latest != null && Updater.IsNewer(latest, installed, root)) // FIX-GTS-286: not the same build again
             {
+                if (!manual && !UpdateNoticeOn()) return; // PRT-NOBANNER
                 pendingUpdate = latest;
                 home.Notice = (latest.Artifact ? "A newer RyGT nightly is available: " + Updater.Display(latest.Version)
                                                : "RyGT " + latest.Version + (latest.Prerelease ? " (prerelease)" : "") + " is available") +
