@@ -10,6 +10,7 @@
 #include "prx/libc/include/General.hpp"
 #include "prx/libSceSystemService/SystemService.hpp"
 #include "prx/libSceSystemService/HdrLuminance.hpp"
+#include "prx/libSceSystemService/SysParamLog.hpp"
 
 extern "C" {
 
@@ -50,6 +51,7 @@ int APS5_VABI sceSystemServiceLoadExec(const char* path, const char* const* argu
 }
 
 int APS5_VABI sceSystemServiceDisableNoticeScreenSkipFlagAutoSet(void) {
+ PRT_SYSPARAM("sceSystemServiceDisableNoticeScreenSkipFlagAutoSet", "", "ret 0, ignored");
  return SYSTEM_SERVICE_OK;
 }
 
@@ -59,6 +61,7 @@ int APS5_VABI sceSystemServiceGetDisplaySafeAreaInfo(SystemServiceDisplaySafeAre
  }
  *info = SystemServiceDisplaySafeAreaInfo{};
  info->ratio = 1.0f;
+ PRT_SYSPARAM("sceSystemServiceGetDisplaySafeAreaInfo", "", SysParamLog::Format("ret 0, ratio %.3f", info->ratio));
  return SYSTEM_SERVICE_OK;
 }
 
@@ -72,6 +75,9 @@ int APS5_VABI sceSystemServiceGetHdrToneMapLuminance(SystemServiceHdrToneMapLumi
  luminance->max_full_frame_tone_map_luminance = display.full_frame;
  luminance->max_tone_map_luminance = display.peak;
  luminance->min_tone_map_luminance = display.min;
+ PRT_SYSPARAM("sceSystemServiceGetHdrToneMapLuminance", "",
+              SysParamLog::Format("ret 0, full frame %.1f, peak %.1f, min %.4f", luminance->max_full_frame_tone_map_luminance,
+                                  luminance->max_tone_map_luminance, luminance->min_tone_map_luminance));
  return SYSTEM_SERVICE_OK;
 }
 
@@ -80,6 +86,7 @@ int APS5_VABI sceSystemServiceGetNoticeScreenSkipFlag(bool* value) {
   return SYSTEM_SERVICE_ERROR_PARAMETER;
  }
  *value = false;
+ PRT_SYSPARAM("sceSystemServiceGetNoticeScreenSkipFlag", "", "ret 0, flag 0");
  return SYSTEM_SERVICE_OK;
 }
 
@@ -88,6 +95,10 @@ int APS5_VABI sceSystemServiceGetStatus(SystemServiceStatus* status) {
   return SYSTEM_SERVICE_ERROR_PARAMETER;
  }
  *status = SystemServiceStatus{};
+ PRT_SYSPARAM("sceSystemServiceGetStatus", "",
+              SysParamLog::Format("ret 0, events %d, overlay %d, background %d, vr overlay %d", status->event_num,
+                                  status->is_system_ui_overlaid ? 1 : 0, status->is_in_background_execution ? 1 : 0,
+                                  status->is_vr_play_area_overlaid ? 1 : 0));
  return SYSTEM_SERVICE_OK;
 }
 
@@ -120,6 +131,7 @@ int APS5_VABI sceSystemServiceParamGetInt(int paramId, int* value) {
   case SYSTEM_SERVICE_PARAM_ID_ENTER_BUTTON_ASSIGN: *value = SYSTEM_SERVICE_PARAM_ENTER_BUTTON_CROSS; break;
   default: *value = 0; break;
  }
+ PRT_SYSPARAM("sceSystemServiceParamGetInt", SysParamLog::Format("id %d", paramId), SysParamLog::Format("ret 0, value %d", *value));
  return SYSTEM_SERVICE_OK;
 }
 
@@ -127,6 +139,8 @@ int APS5_VABI sceSystemServiceParamGetString(int param_id, char* buf, size_t buf
  (void)param_id;
  (void)buf;
  (void)buf_size;
+ PRT_SYSPARAM("sceSystemServiceParamGetString", SysParamLog::Format("id %d, size %zu", param_id, buf_size),
+              "ret 0, not implemented, buffer untouched");
  NotImplemented_nid_no_patch(__func__);
  return 0;
 }
@@ -140,6 +154,7 @@ int APS5_VABI sceSystemServiceReceiveEvent(SystemServiceEvent* event) {
  if (event == nullptr) {
   return SYSTEM_SERVICE_ERROR_PARAMETER;
  }
+ PRT_SYSPARAM("sceSystemServiceReceiveEvent", "", "ret NO_EVENT");
  return SYSTEM_SERVICE_ERROR_NO_EVENT;
 }
 
@@ -150,6 +165,7 @@ int APS5_VABI sceSystemServiceReportAbnormalTermination(const void* info) {
 }
 
 int APS5_VABI sceSystemServiceSetNoticeScreenSkipFlag(void) {
+ PRT_SYSPARAM("sceSystemServiceSetNoticeScreenSkipFlag", "", "ret 0, ignored");
  return SYSTEM_SERVICE_OK;
 }
 

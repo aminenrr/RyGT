@@ -34,6 +34,7 @@
 #include "SDL.h"
 #include "SceTypes.hpp"
 #include "prx/libkernel/Time/include/Time.hpp"
+#include "prx/libSceSystemService/SysParamLog.hpp"
 
 namespace {
 
@@ -1418,6 +1419,10 @@ int APS5_VABI sceAudioOutOpen(int userId, int type, int index, std::uint32_t len
                      handle, type, len, freq, static_cast<int>(format), port.hardwareRouted ? 1 : 0,
                      port.hardwareRouted ? g_masterMixer.deviceId() : 0u);
     }
+    PRT_SYSPARAM("sceAudioOutOpen",
+                 SysParamLog::Format("user %d, type %d, index %d, len %u, freq %u, param 0x%x", userId, type, index, len, freq, param),
+                 SysParamLog::Format("handle %u, format %d, channels %d, hw %d", handle, static_cast<int>(format), port.channels,
+                                     port.hardwareRouted ? 1 : 0));
     return static_cast<int>(handle);
 }
 
@@ -1584,6 +1589,14 @@ int APS5_VABI sceAudioOutSetVolume(int handle, std::uint32_t flag, int* vol) {
         }
         port->volume[i].store(vol[srcIdx], std::memory_order_relaxed);
     }
+    if (SysParamLog::On()) {
+        std::string levels;
+        for (int i = 0; i < port->channels; i++) {
+            levels += SysParamLog::Format(i == 0 ? "%d" : ",%d", port->volume[i].load(std::memory_order_relaxed));
+        }
+        SysParamLog::Note("sceAudioOutSetVolume", SysParamLog::Format("handle %d, type %d", handle, port->type),
+                          "ret 0, stored " + levels);
+    }
     return 0;
 }
 
@@ -1624,10 +1637,16 @@ int APS5_VABI sceAudioOutGetPortState(int handle, AudioOutPortState* state) {
         default:
             throw std::runtime_error("sceAudioOutGetPortState: unknown port type");
     }
+    PRT_SYSPARAM("sceAudioOutGetPortState", SysParamLog::Format("handle %d, type %d, channels %d", handle, port->type, port->channels),
+                 SysParamLog::Format("ret 0, output 0x%x, channel %u, volume %d, reroute %u, flag 0x%llx", static_cast<unsigned>(state->output),
+                                     static_cast<unsigned>(state->channel), static_cast<int>(state->volume),
+                                     static_cast<unsigned>(state->rerouteCounter),
+                                     static_cast<unsigned long long>(state->flag)));
     return 0;
 }
 
-int APS5_VABI sceAudioOutSetMixLevelPadSpk(void) {
+int APS5_VABI sceAudioOutSetMixLevelPadSpk(int handle, int mixLevel) {
+    PRT_SYSPARAM("sceAudioOutSetMixLevelPadSpk", SysParamLog::Format("handle %d, level %d", handle, mixLevel), "ret 0, not implemented, ignored");
     NotImplemented_nid_no_patch(__func__);
     return 0;
 }

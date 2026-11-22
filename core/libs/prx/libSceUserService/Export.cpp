@@ -15,6 +15,7 @@
 #include <windows.h>
 #endif
 #include "GameSerial.hpp"
+#include "prx/libSceSystemService/SysParamLog.hpp"
 
 namespace {
 
@@ -185,6 +186,7 @@ int APS5_VABI sceUserServiceGetAccessibilityChatTranscription(int user_id, int32
   return USER_SERVICE_ERROR_INVALID_ARGUMENT;
  }
  *chat_transcription = 0;
+ PRT_SYSPARAM("sceUserServiceGetAccessibilityChatTranscription", SysParamLog::Format("user 0x%x", user_id), "ret 0, value 0");
  return USER_SERVICE_OK;
 }
 
@@ -193,6 +195,7 @@ int APS5_VABI sceUserServiceGetAccessibilityPressAndHoldDelay(int user_id, int32
   return USER_SERVICE_ERROR_INVALID_ARGUMENT;
  }
  *press_and_hold_delay = 0;
+ PRT_SYSPARAM("sceUserServiceGetAccessibilityPressAndHoldDelay", SysParamLog::Format("user 0x%x", user_id), "ret 0, value 0");
  return USER_SERVICE_OK;
 }
 
@@ -201,6 +204,7 @@ int APS5_VABI sceUserServiceGetAccessibilityTriggerEffect(int user_id, int32_t* 
   return USER_SERVICE_ERROR_INVALID_ARGUMENT;
  }
  *trigger_effect = 0;
+ PRT_SYSPARAM("sceUserServiceGetAccessibilityTriggerEffect", SysParamLog::Format("user 0x%x", user_id), "ret 0, value 0");
  return USER_SERVICE_OK;
 }
 
@@ -209,6 +213,7 @@ int APS5_VABI sceUserServiceGetAccessibilityVibration(int user_id, int32_t* vibr
   return USER_SERVICE_ERROR_INVALID_ARGUMENT;
  }
  *vibration = 0;
+ PRT_SYSPARAM("sceUserServiceGetAccessibilityVibration", SysParamLog::Format("user 0x%x", user_id), "ret 0, value 0");
  return USER_SERVICE_OK;
 }
 
@@ -217,6 +222,7 @@ int APS5_VABI sceUserServiceGetAccessibilityZoomEnabled(int user_id, int32_t* zo
   return USER_SERVICE_ERROR_INVALID_ARGUMENT;
  }
  *zoom_enabled = 0;
+ PRT_SYSPARAM("sceUserServiceGetAccessibilityZoomEnabled", SysParamLog::Format("user 0x%x", user_id), "ret 0, value 0");
  return USER_SERVICE_OK;
 }
 
@@ -263,6 +269,8 @@ int APS5_VABI sceUserServiceGetGamePresets(int user_id, UserServiceGamePresets* 
  presets->invert_horizontal_view_for_3rd_person_view = 0;
  presets->display_sub_titles = 0;
  presets->audio_language = 0;
+ PRT_SYSPARAM("sceUserServiceGetGamePresets", SysParamLog::Format("user 0x%x, size %zu", user_id, presets->this_size),
+              "ret 0, every preset 0 (not specified)");
  return USER_SERVICE_OK;
 }
 
