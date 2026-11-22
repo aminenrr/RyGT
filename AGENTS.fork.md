@@ -120,6 +120,13 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-22 | shadGT | 649aa23f | Round 5 item 2 PRT-VRAMREG: over the VRAM budget (every 30 frames), at most every 10 s, MB by kind and the 5 largest resources (`RYGT_VRAM_REGISTRY_LOG`) | GT7 on | 45030886695 green, artifact 14759536541 | pending |
 | 2026-11-22 | shadGT | f83da039 | Round 5 item 3 PRT-STALLCAUSE: PRT-STALLLOG line gets guest clock hold, fence waits (longest with site + timeline), DIAG-GTS-518 sites, present/acquire waits, compile waits (`RYGT_STALL_CAUSE`) | GT7 on | 45030886695 green, artifact 14759536541 | pending |
 | 2026-11-22 | shadGT | 5390dcc1, 61b90978 | shadGT#75 review fix (also on pr/trophies f02cd3a6, a4eb5a8e): npCommId must be AAAA00000_00, TRP entry names with / \\ : .. skipped, trophy folder must be inside TrophyDir before extract/remove_all; key file deleted after ReadTrophyKey. Security fix, no switch | always | next RyGT CI | pending |
+| 2026-11-22 | shadGT | 286c2767 | Round 6 PRT-DRVSHARD sharded GT7 driver cache, new shard files, old single file not imported (`RYGT_DRIVER_CACHE_SHARDS`); PRT-DRVLOAD load + hit log (`RYGT_DRIVER_CACHE_LOAD_LOG`); PRT-SPLASHSKIP (`RYGT_SPLASH_SKIP_AFTER_LAUNCHER`); PRT-SPLASHHOLD splash holds the game, all threads (`RYGT_SPLASH_HOLD_PREWARM`) | 2 / on / on / GT7 on | 45067838880 running (started 2026-11-22, RyGT 5b52efa + shadGT 5520c558) | pending |
+| 2026-11-22 | shadGT | 9985bf71 | Round 6 PRT-VRAMREL2 idle FIX-157 kept GPU pictures written back and released over budget (`RYGT_VRAM_OVER_RELEASE2`); PRT-VRAMREG "other" split; PRT-VRAMKEEP off in GT7 (`RYGT_VRAM_OVER_RELEASE`) | GT7 on / GT7 off | 45067838880 running (started 2026-11-22, RyGT 5b52efa + shadGT 5520c558) | pending |
+| 2026-11-22 | shadGT | d7a8ce89 | Round 6 PRT-PERF unnamed threads shown as tid@module (`RYGT_PERF_THREAD_MODULE`) | on | 45067838880 running (started 2026-11-22, RyGT 5b52efa + shadGT 5520c558) | pending |
+| 2026-11-22 | shadGT | b0f88017 | Round 6 PRT-PHOTOWAIT mode 2: out of a race any draw into a 3840x2160+ target waits (`RYGT_PHOTO_FIRST_WAIT`) | 2 in GT7 | 45067838880 running (started 2026-11-22, RyGT 5b52efa + shadGT 5520c558) | pending |
+| 2026-11-22 | shadGT | 7726b936, 5520c558 | Round 6 PRT-SYSPARAM wall clock + gamma/AdjustColor setters on every call; `RYGT_SDMEM_LOG` registry line; RCAS registry text | on | 45067838880 running (started 2026-11-22, RyGT 5b52efa + shadGT 5520c558) | pending |
+| 2026-11-22 | RyGT | a3422ed | Round 6 PRT-SDMEM full changed byte list with time per memory save write; PRT-SYSPARAM wall clock + param id names (`RYGT_SDMEM_LOG`, `RYGT_SYSPARAM_LOG`) | on | 45067838880 running (started 2026-11-22, RyGT 5b52efa + shadGT 5520c558) | pending |
+| 2026-11-22 | RyGT | 5b52efa | Round 6 launcher: RCAS slider under Pro mode (GPU.pro_rcas, Off + 0 to 1 step 0.05, default 0.30, sends `RYGT_PRO_RCAS`), splash hold toggle (`RYGT_SPLASH_HOLD_PREWARM`), RYGT_LAUNCHER_PREWARM_CLEAN after a clean or skipped launcher pass | 0.30 / on | 45067838880 running (started 2026-11-22, RyGT 5b52efa + shadGT 5520c558) | pending |
 | planned | both | - | Round 4b: see "Round 4b plan" section below (handoff work/handoff-round4b-2026-11-21.md in the Hark project) | - | - | - |
 | planned | shadGT | - | PRT-STALL options (Round 3 item 4), after owner pick | - | - | - |
 
@@ -203,3 +210,22 @@ Delete old AvPlayer cutscene bat; remove RYGT_SHADER_STORE_CLEANUP=0; delete vra
 
 ### Owner hardware
 RTX 3070 Ti laptop 8 GB (driver budget 6342 MB), 1440p screen, Windows. Launcher: splash prewarm on, launcher graphics prewarm on, When new shaders compile = Keep going.
+
+## Round 6 build (2026-11-22) and handoff
+Owner go 2026-11-22 20:14 GMT. Built from the Round 5 logs (work/logs/r5/log_1..3 in the Hark project).
+Owner decisions: 5.1 audio already works since Round 5 (no AUDIOCH). Only Opening Movie and display calibration (gamma etc) still reset. Splash hold default on (owner waited in Used Cars while the background pass ran). Shards start fresh, so expect ONE cold launcher pass (about 20 min), then warm.
+Findings that drove it:
+- Log 3: driver cache 1306 MB loaded and saved back at 1306 MB after 1266 s = zero hits (inferred driver ceiling). Splash then rebuilt 16163 cold in 747 s on 4 threads. 943 to 975 MB caches took about 20 s.
+- Log 2: VRAM 7044 of 6342 MB, "other" 4708 MB unexplained, textures 958 MB, FIX-157 kept 308 MB. VRAMKEEP fired about 2800 times, freed almost nothing.
+- PHOTOWAIT spent its one wait at boot (frame 926, 0x102a160000).
+CI: run 45067838880 on RyGT 5b52efa (renderer shadGT pr-tests 5520c558). Not watched by Hark (owner downloads it). Next agent: check its result first; if the Windows job failed, fix only the compile errors and push once.
+Bats: work/batsR6.zip in the Hark project: r6-default, r6-shards-off, r6-splash-both, r6-splashhold-off, r6-photo1, r6-vramkeep-on.
+
+### What the next agent verifies (from the owner's Round 6 logs)
+1. Shaders: PRT-DRVLOAD lines per shard (file size vs accepted size, hits). First launcher run cold, second start warm (pass about 20 s, high hit count). Each shard file under about 900 MB. If shard hits stay 0 after a warm start, the ceiling theory is wrong: look at the NVIDIA shader cache size and the cache header/UUID.
+2. Splash: PRT-SPLASHHOLD holds the game and finishes before boot; PRT-SPLASHSKIP skips after a clean launcher pass. No waiting in menus for compiles.
+3. FPS late session: PRT-VRAMREG "other" split names the 4.7 GB; PRT-VRAMREL2 MB freed; PRT-PERF tid@module for the core-pegging thread. Single digits may still happen: the real fix is next round once "other" is named.
+4. Scapes photo before any race: not black; PRT-PHOTOWAIT mode 2 lines.
+5. Opening Movie + gamma: PRT-SDMEM byte list and PRT-SYSPARAM gamma/AdjustColor lines around the Options exit (owner notes the clock time). Find what drops the value, propose a fix.
+6. RCAS slider on Graphics page, 0.30 default, RYGT_PRO_RCAS in the game env.
+7. GT Sport CUSA03220 still boots.
