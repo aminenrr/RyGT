@@ -131,7 +131,7 @@ int APS5_VABI sceSystemServiceParamGetInt(int paramId, int* value) {
   case SYSTEM_SERVICE_PARAM_ID_ENTER_BUTTON_ASSIGN: *value = SYSTEM_SERVICE_PARAM_ENTER_BUTTON_CROSS; break;
   default: *value = 0; break;
  }
- PRT_SYSPARAM("sceSystemServiceParamGetInt", SysParamLog::Format("id %d", paramId), SysParamLog::Format("ret 0, value %d", *value));
+ PRT_SYSPARAM("sceSystemServiceParamGetInt", SysParamLog::Format("id %d %s", paramId, SysParamLog::ParamName(paramId)), SysParamLog::Format("ret 0, value %d", *value));
  return SYSTEM_SERVICE_OK;
 }
 

@@ -1103,21 +1103,46 @@ int set_memory_internal(const SaveDataMemorySet2* set_param) {
         if (diff_log && data.buf_size != 0) {
             const auto* before = reinterpret_cast<const unsigned char*>(updated.data.data() + data.offset);
             const auto* after = static_cast<const unsigned char*>(data.buf);
-            std::size_t changed = 0, shown = 0;
-            char list[512] = {};
-            std::size_t used = 0;
+            std::size_t changed = 0;
             for (std::size_t b = 0; b < data.buf_size; b++) {
+                if (before[b] != after[b]) changed++;
+            }
+            const auto now = std::chrono::system_clock::now();
+            const std::time_t seconds = std::chrono::system_clock::to_time_t(now);
+            std::tm local{};
+#ifdef _WIN32
+            localtime_s(&local, &seconds);
+#else
+            localtime_r(&seconds, &local);
+#endif
+            const long long ms =
+                static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000);
+            char clock[16] = {};
+            std::snprintf(clock, sizeof(clock), "%02d:%02d:%02d.%03lld", local.tm_hour, local.tm_min, local.tm_sec, ms);
+            std::fprintf(stderr, "[SAVEDATA:core] PRT-SDMEM: [%s] set offset 0x%zx size 0x%zx, %zu bytes changed\n", clock,
+                         static_cast<std::size_t>(data.offset), static_cast<std::size_t>(data.buf_size), changed);
+            constexpr std::size_t kPerLine = 32;
+            constexpr std::size_t kMaxLines = 64;
+            std::size_t listed = 0, lines_out = 0;
+            std::string line;
+            for (std::size_t b = 0; b < data.buf_size && lines_out < kMaxLines; b++) {
                 if (before[b] == after[b]) continue;
-                changed++;
-                if (shown < 24 && used + 32 < sizeof(list)) {
-                    used += static_cast<std::size_t>(std::snprintf(list + used, sizeof(list) - used, " 0x%zx:%02x->%02x",
-                                                                   static_cast<std::size_t>(data.offset) + b, before[b], after[b]));
-                    shown++;
+                char item[40];
+                std::snprintf(item, sizeof(item), " 0x%zx:%02x->%02x", static_cast<std::size_t>(data.offset) + b, before[b], after[b]);
+                line += item;
+                listed++;
+                if (listed % kPerLine == 0) {
+                    std::fprintf(stderr, "[SAVEDATA:core] PRT-SDMEM: [%s] bytes%s\n", clock, line.c_str());
+                    line.clear();
+                    lines_out++;
                 }
             }
-            std::fprintf(stderr, "[SAVEDATA:core] PRT-SDMEM: set offset 0x%zx size 0x%zx, %zu bytes changed%s%s\n",
-                         static_cast<std::size_t>(data.offset), static_cast<std::size_t>(data.buf_size), changed,
-                         list, changed > shown ? " ..." : "");
+            if (!line.empty()) {
+                std::fprintf(stderr, "[SAVEDATA:core] PRT-SDMEM: [%s] bytes%s\n", clock, line.c_str());
+            }
+            if (listed < changed) {
+                std::fprintf(stderr, "[SAVEDATA:core] PRT-SDMEM: [%s] %zu more changed bytes not listed\n", clock, changed - listed);
+            }
         }
         std::memcpy(updated.data.data() + data.offset, data.buf, data.buf_size);
     }
