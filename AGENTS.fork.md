@@ -158,3 +158,29 @@ Priority order. Each item: own switch in shadGT src/video_core/rygt_switches.cpp
 8. Launcher: hide update banner ("RyGT <date> is available (you have nightly ...)" with Changelog / Update), it points at upstream. Switch or setting, default hidden.
 9. Opening Movie option (Options > Global) set On resets to Off next launch, OP movie does not play. Find what resets it (our AvPlayer/movie skip patches or the save option not kept), make it stick.
 10. LOW priority, only if token budget allows, else park for next release: photo mode black (scapes and replay). Suspect the photo render target is never written back to guest memory before the game encodes 001.gxl (GPU-only image on the native renderer).
+
+## Round 5 handoff (2026-11-22)
+
+### Where Round 4 stands
+- Round 4b: shadGT 10a40a8, RyGT a3f9bdf, CI 44970137156 green, artifact 14734664337 (expires 2026-11-29 02:06 GMT).
+- Round 4c (on top): shadGT 0d953db, RyGT 2934d05, CI 45027134237 started 13:22 GMT 2026-11-22 (watch task at 14:05 GMT reports it). Adds:
+  - PRT-PHOTOWAIT (RYGT_PHOTO_FIRST_WAIT): GT7 out of a race, a draw into a never-drawn 3840x2160+ colour target waits for its pipeline. First Scapes photo was black (FIX-GT7-131 skipped 0x102a160000 3840x2160).
+  - PRT-VRAMKEEP (RYGT_VRAM_OVER_RELEASE): over VRAM budget (every 30 frames) the idle kept textures (up to 2 GB on GT7, kept_textures_from_vram_setting) are released. After a race VRAM sat at 8.6 of 6.3 GB, GPU 98% busy, 10 fps menus.
+- Owner test of 4b (logs /workspace/work/logs/r4b): later photos fine (PRT-PHOTOWB works), Pro mode looks cleaner, AUDIT spv_invalid=0, VRAM budget 6342 Auto, AF 16x on.
+- Round 4c NOT yet tested by owner. Round 5 starts on top of 4c after his test and go.
+
+### Round 5 candidates (owner picks)
+1. Settings that do not stick (in the same session): Opening Movie, Audio Output Mode (stereo/5.1), display calibration. Units km/miles do save. Logs: every memory save set2 changes 0 bytes; gt7save.tmp is written on each settings exit. So the game drops these values before saving. Lead (inferred): they mirror PS4 system settings and the game reads them back from stubbed calls (libSceSystemService params, libSceAudioOut port/output state, sceAudioOutSetMixLevelPadSpk unimplemented, FIX-GT7-141 HDR off, several libSceDeviceService stubs). Step 1: RYGT_SYSPARAM_LOG tracing system service / audio out / video out queries with their answers while Options is open. Step 2: fix the answers or keep game-set values.
+2. VRAM after race (if 4c is not enough): find what holds 8 GB. Log the registry by kind (targets, textures, mirrors, pattern buffers 250 MB, imported views) when over budget; cap FIX-157 kept GPU-written pictures over budget.
+3. Menus to map stalls: PRT-STALLLOG shows 0.6 to 0.9 s stalls with nothing compiling (frames 8033, 9300, 35776...) and one 10.4 s stall with 296 pipelines building after the race. Trace the no-compile stalls (guest clock holds, DIAG-GTS-518, fence waits).
+4. Pro mode polish: RYGT_PRO_RCAS default after owner tries 0.3; maybe CAS strength switch in launcher.
+5. Verify leftovers: d90a84f static_assert on 1024 in title_defaults.h line 55 / tests/test_game_title.cpp line 42; PRODOWN push constant layout; regex merge in vk_pipeline_cache.cpp vs upstream 425a704; PRT-DRVKEEP .old deleted (no log lines yet, owner check item 9).
+
+### Parked (remind owner)
+Tess + FIX-227, dynamic topology, upstream Mbus SaveData exports (old rygt7 #65), garage nvoglv64.dll crash, camera hooks signature mismatch RVA 0x86b030, read-write alias throws. Dropped: DLSS, HD UI, GT Auto, race name tags at 2x HUD. Upstream shadGT #91 PERF-GT7-137 overlaps PRT-PREWARM (A/B only).
+
+### Owner reminders still open
+Delete old AvPlayer cutscene bat; remove RYGT_SHADER_STORE_CLEANUP=0; delete vram-test-6342.bat.
+
+### Owner hardware
+RTX 3070 Ti laptop 8 GB (driver budget 6342 MB), 1440p screen, Windows. Launcher: splash prewarm on, launcher graphics prewarm on, When new shaders compile = Keep going.
