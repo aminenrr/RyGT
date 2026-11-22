@@ -104,6 +104,14 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-21 | shadGT | 9e4dfb86 | Round 4 port RyGT-Team/shadgt7#45 PERF-GT7-160 compile ceiling learned from GPU stall / device loss, adapted to this queue (`RYGT_COMPILE_ADAPTIVE`, `RYGT_COMPILE_MAX`) | on (no ceiling until a stall on NVIDIA) | 44957423917 green, artifact 14729430815 | owner test pending |
 | 2026-11-21 | shadGT | 7a25a3ec | Round 4 PRT-TOUCH: DualSense touchpad fingers passed to the game, GT7 touchpad zones (`RYGT_PAD_TOUCH`) | on | 44957423917 green, artifact 14729430815 | owner test pending |
 | 2026-11-21 | RyGT | see log | Round 4 PRT-WARMSKIP-HONEST + splash hint; CI pr-tests -> Release package, Diagnostics manual | on | 44957423917 green, artifact 14729430815 | owner test pending |
+| 2026-11-22 | shadGT | 51f804e | Round 4b merge upstream ryty-gpu 425a704: shadGT#95 FIX-SGT-094 SRT walker storage full + #93; PRT-SRTUSE log dropped (`RYGT_SRT_USE_LOG` gone) | upstream | pending | pending |
+| 2026-11-22 | shadGT | d90a84f | Round 4b PRT-DRVKEEP: GT7 driver cache rotates at 2048 MB, .old deleted after a good save (`RYGT_DRIVER_CACHE_KEEP`); PRT-VRAMAUTO default 0 = Auto is the driver budget (`RYGT_VRAM_AUTO_RESERVE_MB`) | on / 0 | pending | pending |
+| 2026-11-22 | shadGT | 916203d | Round 4b PRT-AF forced anisotropic filtering on GT7 trilinear colour samplers (`RYGT_FORCE_ANISO`) | 16 | pending | pending |
+| 2026-11-22 | shadGT | c054cb3 | Round 4b PRT-PRODOWN area-average downscale of a frame larger than the window, optional RCAS (`RYGT_PRO_DOWNSCALE`, `RYGT_PRO_RCAS`) | on / 0 | pending | pending |
+| 2026-11-22 | shadGT | 569d6fe | Round 4b PRT-STALLLOG one line per 500 ms+ stall (`RYGT_STALL_LOG`) | on | pending | pending |
+| 2026-11-22 | RyGT | e918871 | Round 4b PRT-AUDITRZS: audit no longer rejects compressed .spv whose size is not a multiple of 4 (cause of spv_invalid 12912/17103) | always | pending | pending |
+| 2026-11-22 | RyGT | 51168a1 | Round 4b PRT-NOBANNER: automatic update notice hidden (`RYGT_UPDATE_NOTICE=1` in the launcher's own environment shows it; manual check still shows) | hidden | pending | pending |
+| 2026-11-22 | RyGT | ee663a5 | Round 4b PRT-SDMEM: logs bytes changed by each memory save write, for the Opening Movie reset (`RYGT_SDMEM_LOG`) | on | pending | pending |
 | planned | both | - | Round 4b: see "Round 4b plan" section below (handoff work/handoff-round4b-2026-11-21.md in the Hark project) | - | - | - |
 | planned | shadGT | - | PRT-STALL options (Round 3 item 4), after owner pick | - | - | - |
 
@@ -126,6 +134,13 @@ was never ported), c47d3b4 HD UI and all DLSS / HD UI / GT Auto / name tag work 
 - Menus slower moving map to garage etc, with the loading notice bottom right, since shadGT migration.
 - camera-validation.log: "signature mismatch for Cockpit final view at RVA 0x86b030, no camera hooks installed" every start.
 - Still there (watch): "read-write alias of shared guest memory" throws, filemapping.json pread error 5 (file opened write-only), sceSystemGestureUpdateAllTouchRecognizer unimplemented.
+
+## Round 4b build (2026-11-22)
+Owner go 2026-11-22 00:45 GMT. Findings before code (logs work/logs/r4a, r4b-vram, r4b-movie in the Hark project):
+- Slow menus = VRAM over budget: run 2 peak 8609 MB vs Auto 6993 (driver budget 6342), spilled to system memory. Test with RYGT_VRAM_AUTO_RESERVE_MB=1650 (budget 6367): peak 5731 MB, menus better; back to map still 1 to 2 s "Loading". Fix: PRT-VRAMAUTO default 0. Remaining wait traced by PRT-STALLLOG.
+- Opening Movie: GT7 never creates an AvPlayer at boot (no [AVP] lines), so the game reads the option as Off. It reads the memory save (sce_sdmemory/268435456/memory.dat) then writes it 3 times at boot. PRT-SDMEM logs which bytes; fix next round.
+- Item 3 cause: ryty_prewarm rejected .spv sizes not a multiple of 4 before checking the RZS1 magic.
+- Item 7 test only (RYGT_PREWARM_EXCLUSIVE=0). Item 10 photo mode black parked for Round 5.
 
 ## Round 4b plan (owner list 2026-11-21, handoff to the next agent)
 Priority order. Each item: own switch in shadGT src/video_core/rygt_switches.cpp (or launcher setting), Fix log row, one CI run (push shadGT first, then RyGT; pr-tests push runs ci-package-release.yml).
