@@ -115,10 +115,11 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-22 | RyGT | e918871 | Round 4b PRT-AUDITRZS: audit no longer rejects compressed .spv whose size is not a multiple of 4 (cause of spv_invalid 12912/17103) | always | 44970137156 green, artifact 14734664337 | owner test pending |
 | 2026-11-22 | RyGT | 51168a1 | Round 4b PRT-NOBANNER: automatic update notice hidden (`RYGT_UPDATE_NOTICE=1` in the launcher's own environment shows it; manual check still shows) | hidden | 44970137156 green, artifact 14734664337 | owner test pending |
 | 2026-11-22 | RyGT | ee663a5 | Round 4b PRT-SDMEM: logs bytes changed by each memory save write, for the Opening Movie reset (`RYGT_SDMEM_LOG`) | on | 44970137156 green, artifact 14734664337 | owner test pending |
-| 2026-11-22 | shadGT | 0fd2bafe | Round 5 item 1 PRT-SYSPARAM (video out part): GT7 sceVideoOutGetResolutionStatus, GetDeviceCapabilityInfo, ConfigureOutputMode_, AdjustColor, ColorSettingsSetGamma, SetWindowModeMargins with args and our answer, once per distinct answer and on change, 64 lines per call max (`RYGT_SYSPARAM_LOG`) | GT7 on | Round 5 CI pending | pending |
-| 2026-11-22 | RyGT | next commit | Round 5 item 1 PRT-SYSPARAM (HLE part): libSceSystemService param/status/HDR/safe area/notice getters and setters, libSceAudioOut open/port state/volume/SetMixLevelPadSpk, libSceUserService presets and accessibility getters (`RYGT_SYSPARAM_LOG`, same switch, read with getenv like PRT-SDMEM) | GT7 on | Round 5 CI pending | pending |
-| 2026-11-22 | shadGT | 649aa23f | Round 5 item 2 PRT-VRAMREG: over the VRAM budget (every 30 frames), at most every 10 s, MB by kind and the 5 largest resources (`RYGT_VRAM_REGISTRY_LOG`) | GT7 on | Round 5 CI pending | pending |
-| 2026-11-22 | shadGT | f83da039 | Round 5 item 3 PRT-STALLCAUSE: PRT-STALLLOG line gets guest clock hold, fence waits (longest with site + timeline), DIAG-GTS-518 sites, present/acquire waits, compile waits (`RYGT_STALL_CAUSE`) | GT7 on | Round 5 CI pending | pending |
+| 2026-11-22 | shadGT | 0fd2bafe | Round 5 item 1 PRT-SYSPARAM (video out part): GT7 sceVideoOutGetResolutionStatus, GetDeviceCapabilityInfo, ConfigureOutputMode_, AdjustColor, ColorSettingsSetGamma, SetWindowModeMargins with args and our answer, once per distinct answer and on change, 64 lines per call max (`RYGT_SYSPARAM_LOG`) | GT7 on | 45030886695 green, artifact 14759536541 | pending |
+| 2026-11-22 | RyGT | 8438524 | Round 5 item 1 PRT-SYSPARAM (HLE part): libSceSystemService param/status/HDR/safe area/notice getters and setters, libSceAudioOut open/port state/volume/SetMixLevelPadSpk, libSceUserService presets and accessibility getters (`RYGT_SYSPARAM_LOG`, same switch, read with getenv like PRT-SDMEM) | GT7 on | 45030886695 green, artifact 14759536541 | pending |
+| 2026-11-22 | shadGT | 649aa23f | Round 5 item 2 PRT-VRAMREG: over the VRAM budget (every 30 frames), at most every 10 s, MB by kind and the 5 largest resources (`RYGT_VRAM_REGISTRY_LOG`) | GT7 on | 45030886695 green, artifact 14759536541 | pending |
+| 2026-11-22 | shadGT | f83da039 | Round 5 item 3 PRT-STALLCAUSE: PRT-STALLLOG line gets guest clock hold, fence waits (longest with site + timeline), DIAG-GTS-518 sites, present/acquire waits, compile waits (`RYGT_STALL_CAUSE`) | GT7 on | 45030886695 green, artifact 14759536541 | pending |
+| 2026-11-22 | shadGT | 5390dcc1, 61b90978 | shadGT#75 review fix (also on pr/trophies f02cd3a6, a4eb5a8e): npCommId must be AAAA00000_00, TRP entry names with / \\ : .. skipped, trophy folder must be inside TrophyDir before extract/remove_all; key file deleted after ReadTrophyKey. Security fix, no switch | always | next RyGT CI | pending |
 | planned | both | - | Round 4b: see "Round 4b plan" section below (handoff work/handoff-round4b-2026-11-21.md in the Hark project) | - | - | - |
 | planned | shadGT | - | PRT-STALL options (Round 3 item 4), after owner pick | - | - | - |
 
@@ -170,6 +171,12 @@ Owner go 2026-11-22 13:45 GMT. Base shadGT 0d953db (4c), RyGT 6c4900b. 4c CI 450
 - Item 3 PRT-STALLCAUSE (`RYGT_STALL_CAUSE`): totals since the last game frame; waits of several threads add up, nested compile holds count per site.
 - Item 4: bats only (work/batsR5.zip in the Hark project): r5-default, r5-rcas03 (RYGT_PRO_RCAS=0.3), r5-logs-off.
 - Item 5 review (no code change): d90a84f title_defaults GT7 driver_cache_rotate_mb stays 1024 and both static_asserts check 1024, correct: PRT-DRVKEEP raises it to 2048 at run time in DriverCacheRotateBytes (unless SHADGT_DRIVER_CACHE_ROTATE_MB is set). PRT-PRODOWN push constants: Settings 56 B, dlss_sharpening 56, side_x0 60, side_x1 64, side_dim 68, pro_downscale 72, pro_rcas 76, size 80, range sizeof(PostProcessingConstants), matches post_process.frag (all 4-byte scalars); RCAS con.x = strength like the DLSS path. Merge 51f804e vk_pipeline_cache.cpp: git merge-tree of 7a25a3ec + 425a704 conflicts only in two pr-tests-only hunks (PrtKeepBuiltOn, PRT-KEEPBUILT in FinishBuild; upstream side empty); 51f804e equals the "keep ours" resolution byte for byte, upstream FIX-SGT-086 kept.
+
+## Planned feature candidates (owner 2026-11-22)
+Not started; owner picks.
+1. Real shader manifest stored next to the save files (outside the shader folder), so if the shader folder is deleted the game can still precompile/prewarm everything from it.
+2. Better anti-aliasing for PS4 Pro mode. LOW priority (owner: looks good now).
+3. General performance improvement, especially while shaders compile (hitches during in-game compiles).
 
 ## Round 5 handoff (2026-11-22)
 
