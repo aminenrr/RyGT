@@ -128,6 +128,9 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-22 | RyGT | a3422ed | Round 6 PRT-SDMEM full changed byte list with time per memory save write; PRT-SYSPARAM wall clock + param id names (`RYGT_SDMEM_LOG`, `RYGT_SYSPARAM_LOG`) | on | 45067838880 failed (link error, see 6b0d33d9) | pending |
 | 2026-11-22 | RyGT | 5b52efa | Round 6 launcher: RCAS slider under Pro mode (GPU.pro_rcas, Off + 0 to 1 step 0.05, default 0.30, sends `RYGT_PRO_RCAS`), splash hold toggle (`RYGT_SPLASH_HOLD_PREWARM`), RYGT_LAUNCHER_PREWARM_CLEAN after a clean or skipped launcher pass | 0.30 / on | 45067838880 failed (link error, see 6b0d33d9) | pending |
 | 2026-11-22 | shadGT | 6b0d33d9 | Round 6 CI fix: IsValidNpCommId inline in ryty_trophy.h; ryty_stubs.cpp (all libs) referenced it but ryty_trophy.cpp links only into ryty_np, so libSceVideoOut.prx and libSceNgs2.prx failed to link in CI 45067838880 | always | next run (this push) | pending |
+| 2026-11-22 | shadGT | 2e1ad4c0 | Round 7 PRT-QUIETLOG per-event lines off (`RYGT_QUIET_LOGS`): pipeline build line only at 20 ms+, clamp mode warning once, DIAG-049 stack 2 a thread, PERF-GTS-493 slow/skipping only; PRT-SYSPARAM video out off (`RYGT_SYSPARAM_LOG`=1 on); PRT-DRVSHARDNAME shard 1 path fix (was <cache>.shard0.shard1, renamed at start); PRT-DRVSINGLE old single driver cache deleted once a shard loaded data (`RYGT_DRIVER_CACHE_SINGLE_DELETE`) | on / off / always / GT7 on | next run | pending |
+| 2026-11-22 | shadGT | 2a89b3b4 | Round 7 PRT-VRAMTRIM over budget kept textures cut to 256 MB newest first, 64 evictions a frame, until an eighth under budget (`RYGT_VRAM_TRIM`, `RYGT_VRAM_TRIM_KEEP_MB`); PRT-VRAMREG2 sparse arena MB + regions 64 MB+ (`RYGT_VRAM_REGISTRY_LOG`) | GT7 on, 256 | next run | pending |
+| 2026-11-22 | RyGT | see log | Round 7 PERF-GTS-269 mutex counts off (`RYGT_MUTEX_STATS`=1 on); PRT-LONGWAIT game thread blocked 200 ms+ on a mutex logs time, thread name, wait (`RYGT_LONG_WAIT_LOG`); PRT-SDMEM and PRT-SYSPARAM HLE off (`RYGT_SDMEM_LOG`, `RYGT_SYSPARAM_LOG` = 1 on) | off / 200 / off | next run | pending |
 | planned | both | - | Round 4b: see "Round 4b plan" section below (handoff work/handoff-round4b-2026-11-21.md in the Hark project) | - | - | - |
 | planned | shadGT | - | PRT-STALL options (Round 3 item 4), after owner pick | - | - | - |
 
@@ -230,3 +233,10 @@ Bats: work/batsR6.zip in the Hark project: r6-default, r6-shards-off, r6-splash-
 5. Opening Movie + gamma: PRT-SDMEM byte list and PRT-SYSPARAM gamma/AdjustColor lines around the Options exit (owner notes the clock time). Find what drops the value, propose a fix.
 6. RCAS slider on Graphics page, 0.30 default, RYGT_PRO_RCAS in the game env.
 7. GT Sport CUSA03220 still boots.
+
+## Round 7 build (2026-11-22)
+Owner go 2026-11-22 23:52 GMT. Scope: VRAM and performance only. Opening Movie PARKED (its logging off). Logs work/logs/r6 in the Hark project.
+Round 6 test (CI 45072303442, RyGT 02b1d7e + shadGT 6b0d33d9): 30+ min no single digit fps, Scapes photo OK, splash hold OK, shards load (Success, run 2 warm, 0 new), display calibration sticks, Opening Movie does not.
+Findings: race VRAM 7.2 to 8.2 GB, load peaks 9.0 to 9.2 GB of 6342 budget; kept textures up to 1041 MB (PRT-VRAMKEEP is off in GT7, so nothing cut them); VRAMREL2 frees a few MB. Trial Mountain: 11 stalls 1.0 to 1.5 s, no compile, fence waits under 100 ms (CPU side). Audio out waits on a condition variable (no spin found); SceSndzAudioOutMain CPU is the game's own sound work.
+Not done this round: .meta compression of the shader store (many readers incl. ryty_prewarm audit; about 300 MB), VMA defrag.
+Owner: delete <cache>-...vkpipelinecache by hand or let PRT-DRVSINGLE do it.

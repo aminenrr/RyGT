@@ -102,4 +102,7 @@ struct PthreadPrivate {
     PthreadPrivate() : _finished(false), _retval(nullptr), _detached(false), _adopted(false) {}
 };
 
+/// PRT-LONGWAIT (Round 7): the calling game thread's name ("" for a thread the game did not make).
+void PrtCurrentThreadName(char* out, std::size_t size);
+
 #endif

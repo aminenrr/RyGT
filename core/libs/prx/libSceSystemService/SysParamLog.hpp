@@ -15,8 +15,9 @@ namespace SysParamLog {
 
 inline bool On() {
     static const bool on = [] {
+        // Off since Round 7 (Opening Movie parked); RYGT_SYSPARAM_LOG=1 turns it on in GT7.
         const char* env = std::getenv("RYGT_SYSPARAM_LOG");
-        if (env && env[0] == '0') return false;
+        if (!(env && env[0] == '1')) return false;
         return GameSerial::RunningGt7();
     }();
     return on;

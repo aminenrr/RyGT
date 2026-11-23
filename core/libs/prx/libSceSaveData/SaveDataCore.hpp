@@ -1096,7 +1096,7 @@ int set_memory_internal(const SaveDataMemorySet2* set_param) {
     MemorySlot updated = it->second;
     static const bool diff_log = [] {
         const char* env = std::getenv("RYGT_SDMEM_LOG");
-        return !(env && env[0] == '0');
+        return env && env[0] == '1';
     }();
     for (std::uint32_t i = 0; i < count; i++) {
         const MemoryData& data = descriptors[i];

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -59,12 +60,57 @@ void ReportMutexes() {
                  static_cast<unsigned long long>(v[3]), static_cast<unsigned long long>(v[4]), static_cast<unsigned long long>(v[5]), MutexSpinTries());
 }
 
+// PERF-GTS-269's counts (RYGT_MUTEX_STATS=1; off since Round 7): every lock of every game thread
+// bumped one shared counter, 285,000 times in 10 s of a GT7 race.
+bool MutexStatsOn() {
+    static const bool on = [] {
+        const char* env = std::getenv("RYGT_MUTEX_STATS");
+        return env && env[0] == '1';
+    }();
+    return on;
+}
+
+// PRT-LONGWAIT (Round 7, RYGT_LONG_WAIT_LOG=<ms>, default 200, 0 = off): a game thread blocked
+// that long for a mutex logs the time, its name and the wait. Only the blocked path is timed.
+// Round 6 GT7 had 1 to 1.5 s pauses with no GPU, present or compile wait.
+std::uint64_t LongWaitMs() {
+    static const std::uint64_t ms = [] {
+        const char* env = std::getenv("RYGT_LONG_WAIT_LOG");
+        if (!env || !*env) return std::uint64_t{200};
+        const long long value = std::strtoll(env, nullptr, 10);
+        return value <= 0 ? std::uint64_t{0} : static_cast<std::uint64_t>(value);
+    }();
+    return ms;
+}
+
+void NoteLongWait(std::uint64_t waited_ms, bool adaptive) {
+    static std::atomic<std::uint32_t> logged{0};
+    const std::uint32_t n = logged.fetch_add(1, std::memory_order_relaxed);
+    if (n >= 64 && n % 100 != 0) return;
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t seconds = std::chrono::system_clock::to_time_t(now);
+    std::tm local{};
+#ifdef _WIN32
+    localtime_s(&local, &seconds);
+#else
+    localtime_r(&seconds, &local);
+#endif
+    const long long ms =
+        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000);
+    char name[32] = {};
+    PrtCurrentThreadName(name, sizeof(name));
+    std::fprintf(stderr, "[pthread] PRT-LONGWAIT: [%02d:%02d:%02d.%03lld] thread %s waited %llu ms for a %smutex (%u so far)\n",
+                 local.tm_hour, local.tm_min, local.tm_sec, ms, name[0] ? name : "(no name)",
+                 static_cast<unsigned long long>(waited_ms), adaptive ? "adaptive " : "", n + 1);
+}
+
 template<typename TNative>
 void LockCounted(TNative& native, bool adaptive) {
     const int kind = adaptive ? 1 : 0;
-    g_locks[kind].fetch_add(1, std::memory_order_relaxed);
+    const bool stats = MutexStatsOn();
+    if (stats) g_locks[kind].fetch_add(1, std::memory_order_relaxed);
     if (native.try_lock()) return;
-    g_held[kind].fetch_add(1, std::memory_order_relaxed);
+    if (stats) g_held[kind].fetch_add(1, std::memory_order_relaxed);
     // Every mutex: GT Sport creates none as adaptive (a race: 6 to 8 million locks in 10 s on
     // ordinary ones, 1.6 to 2.3 million of them found held). The tries must stay few: at 200,000
     // held locks a second, 64 tries of 16 pauses each used up the cores the renderer runs on.
@@ -72,12 +118,21 @@ void LockCounted(TNative& native, bool adaptive) {
     for (int i = 0; i < tries; ++i) {
         __builtin_ia32_pause();
         if (native.try_lock()) {
-            g_spun[kind].fetch_add(1, std::memory_order_relaxed);
+            if (stats) g_spun[kind].fetch_add(1, std::memory_order_relaxed);
             return;
         }
     }
-    ReportMutexes();
+    if (stats) ReportMutexes();
+    const std::uint64_t long_ms = LongWaitMs();
+    if (long_ms == 0) {
+        native.lock();
+        return;
+    }
+    const auto start = std::chrono::steady_clock::now();
     native.lock();
+    const auto waited = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
+    if (waited >= long_ms) NoteLongWait(waited, adaptive);
 }
 
 PthreadMutex destroyedMutex() {

@@ -261,6 +261,17 @@ static unsigned __stdcall StartNativeThread(void* opaque) {
 }
 #endif
 
+void PrtCurrentThreadName(char* out, std::size_t size) {
+    if (out == nullptr || size == 0) return;
+    out[0] = '\0';
+    PthreadPrivate* self = currentThread;
+    if (self == nullptr) return;
+    std::lock_guard lock(self->nameLock);
+    const std::size_t length = std::min<std::size_t>(self->name.size(), size - 1);
+    std::memcpy(out, self->name.data(), length);
+    out[length] = '\0';
+}
+
 extern "C" {
 
 int APS5_VABI scePthreadCreate(Pthread* thread, const PthreadAttr* attr, PthreadEntry entry, void* arg, const char* name) {
