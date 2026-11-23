@@ -31,6 +31,8 @@ struct PthreadMutexPrivate {
     bool _adaptive = false; // PERF-GTS-269
     std::atomic<std::thread::id> _owner;
     int _count;
+    char _name[32] = {};                              // PRT-LONGWAIT (Round 8): the game's name for it
+    std::atomic<const char*> _owner_name{nullptr};    // PRT-LONGWAIT (Round 8): last owner's thread name
 
     PthreadMutexPrivate() : _type(MutexType::Normal), _owner(std::thread::id{}), _count(0) {}
 };

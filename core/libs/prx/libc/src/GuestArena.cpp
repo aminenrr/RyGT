@@ -254,7 +254,7 @@ void GuestArenaMap_nid_postfix(void* pointer, std::size_t bytes, void* section, 
 // range that cannot be aliased returns null.
 void* GuestArenaMapAlias_nid_postfix(std::uintptr_t address, std::size_t bytes) {
     try {
-        return WindowsMappings::Get().MapAlias(address, bytes);
+        return WindowsMappings::Get().MapAlias(address, bytes, true); // PRT-ALIASQUIET
     } catch (const std::exception&) {
         return nullptr;
     }

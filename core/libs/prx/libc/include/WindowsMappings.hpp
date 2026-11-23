@@ -218,7 +218,10 @@ public:
                protection == PAGE_WRITECOPY || protection == PAGE_EXECUTE_WRITECOPY;
     }
 
-    void* MapAlias(std::uintptr_t address, std::size_t bytes) {
+    // PRT-ALIASQUIET (Round 8): quiet = true answers null for a range that cannot be aliased
+    // instead of throwing (the renderer's caller turned every throw into null anyway, and each
+    // throw cost an exception plus a stack walk on the GPU recorder thread at every race start).
+    void* MapAlias(std::uintptr_t address, std::size_t bytes, bool quiet = false) {
         Lock lock(*this);
         carve_next = carve_end = 0; // PERF-GT7-093: placeholders may change
         const auto refuse = [&](const char* reason) {
@@ -226,9 +229,9 @@ public:
             std::snprintf(text, sizeof(text), "read-write alias of shared guest memory 0x%llx+0x%llx: %s", static_cast<unsigned long long>(address), static_cast<unsigned long long>(bytes), reason);
             return std::runtime_error(text);
         };
-        if (address % pageBytes != 0 || bytes % pageBytes != 0 || bytes == 0) throw refuse("the range is not made of whole shared pages");
+        if (address % pageBytes != 0 || bytes % pageBytes != 0 || bytes == 0) { if (quiet) return nullptr; throw refuse("the range is not made of whole shared pages"); }
         auto view = views.find(address);
-        if (view == views.end()) throw refuse("the range does not start at a shared view");
+        if (view == views.end()) { if (quiet) return nullptr; throw refuse("the range does not start at a shared view"); }
         const auto section = view->second.section;
         const auto offset = view->second.offset;
         SYSTEM_INFO system{};
@@ -236,7 +239,7 @@ public:
         // FIX-RT-001: the runs of consecutive offsets of one section that the range is made of.
         std::vector<AliasRun> runs;
         for (std::size_t done = 0; done < bytes; done += pageBytes, ++view) {
-            if (view == views.end() || view->first != address + done) throw refuse("the range is not all shared views");
+            if (view == views.end() || view->first != address + done) { if (quiet) return nullptr; throw refuse("the range is not all shared views"); }
             const HANDLE handle = view->second.section->handle;
             if (!runs.empty() && view->second.offset == runs.back().offset + runs.back().bytes &&
                 (handle == runs.back().section || sameSection(handle, runs.back().section))) {

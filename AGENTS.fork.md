@@ -131,6 +131,9 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-22 | shadGT | 2e1ad4c0 | Round 7 PRT-QUIETLOG per-event lines off (`RYGT_QUIET_LOGS`): pipeline build line only at 20 ms+, clamp mode warning once, DIAG-049 stack 2 a thread, PERF-GTS-493 slow/skipping only; PRT-SYSPARAM video out off (`RYGT_SYSPARAM_LOG`=1 on); PRT-DRVSHARDNAME shard 1 path fix (was <cache>.shard0.shard1, renamed at start); PRT-DRVSINGLE old single driver cache deleted once a shard loaded data (`RYGT_DRIVER_CACHE_SINGLE_DELETE`) | on / off / always / GT7 on | next run | pending |
 | 2026-11-22 | shadGT | 2a89b3b4 | Round 7 PRT-VRAMTRIM over budget kept textures cut to 256 MB newest first, 64 evictions a frame, until an eighth under budget (`RYGT_VRAM_TRIM`, `RYGT_VRAM_TRIM_KEEP_MB`); PRT-VRAMREG2 sparse arena MB + regions 64 MB+ (`RYGT_VRAM_REGISTRY_LOG`) | GT7 on, 256 | next run | pending |
 | 2026-11-22 | RyGT | see log | Round 7 PERF-GTS-269 mutex counts off (`RYGT_MUTEX_STATS`=1 on); PRT-LONGWAIT game thread blocked 200 ms+ on a mutex logs time, thread name, wait (`RYGT_LONG_WAIT_LOG`); PRT-SDMEM and PRT-SYSPARAM HLE off (`RYGT_SDMEM_LOG`, `RYGT_SYSPARAM_LOG` = 1 on) | off / 200 / off | next run | pending |
+| 2026-11-23 | shadGT | b52fa61f..a856a7a6 | Round 8 upstream picks from RyGT-Team/shadGT ryty-gpu: PERF-SGT-120 GuestBuffer memo, FIX-SGT-121 AVX regs in write-fault handling, FIX-SGT-060, PERF-SGT-121/122 ThinLTO+PGO, FIX-SGT-099 hold time, FIX-SGT-100, FIX-SGT-112, FIX-SGT-114 (FIX-SGT-097 and the FIX-SGT-099 pre-translation commit conflict, skipped) | upstream defaults | next run | pending |
+| 2026-11-23 | shadGT | c3dd150d | Round 8 PRT-STALLSAMPLE game submit/flip thread IP + stack code addresses once per stall (`RYGT_STALL_SAMPLE`, `RYGT_STALL_SAMPLE_MS` 400); PRT-VRAMIDLE over budget guest-loaded textures go after 30 idle frames (`RYGT_VRAM_TRIM_IDLE_FRAMES`); PRT-QUIETLOG driver create line 20 ms+ only | on / GT7 30 / on | next run | pending |
+| 2026-11-23 | RyGT | see log | Round 8 PRT-LONGWAIT mutex name + last holder thread; cond/sema/evf/equeue waits with game call site on busy threads (30+ waits in 2 s); PRT-ALIASQUIET MapAlias answers null without a throw for the renderer (no exception + stack walk at race starts) | 200 / always | next run | pending |
 | planned | both | - | Round 4b: see "Round 4b plan" section below (handoff work/handoff-round4b-2026-11-21.md in the Hark project) | - | - | - |
 | planned | shadGT | - | PRT-STALL options (Round 3 item 4), after owner pick | - | - | - |
 
@@ -240,3 +243,11 @@ Round 6 test (CI 45072303442, RyGT 02b1d7e + shadGT 6b0d33d9): 30+ min no single
 Findings: race VRAM 7.2 to 8.2 GB, load peaks 9.0 to 9.2 GB of 6342 budget; kept textures up to 1041 MB (PRT-VRAMKEEP is off in GT7, so nothing cut them); VRAMREL2 frees a few MB. Trial Mountain: 11 stalls 1.0 to 1.5 s, no compile, fence waits under 100 ms (CPU side). Audio out waits on a condition variable (no spin found); SceSndzAudioOutMain CPU is the game's own sound work.
 Not done this round: .meta compression of the shader store (many readers incl. ryty_prewarm audit; about 300 MB), VMA defrag.
 Owner: delete <cache>-...vkpipelinecache by hand or let PRT-DRVSINGLE do it.
+
+## Round 8 build (2026-11-23)
+Owner tested Round 7 (one run, Trial Mountain Circuit Experience, logs in the project): most big hitches gone or smaller. 17 stalls of 635 to 770 ms (Round 6: 1.0 to 1.5 s), nothing compiling, fence waits under 60 ms, no game-thread mutex wait in races; VRAM races 5.8 to 6.1 GB, spikes 6.7 to 7.5 GB from live textures.
+- shadGT: upstream picks (see Fix log), PRT-STALLSAMPLE, PRT-VRAMIDLE, driver create line quiet.
+- RyGT: PRT-LONGWAIT wider, PRT-ALIASQUIET.
+- Item 6 (compute pipeline "installed 46970 ms after"): not a bug. The build ended in 1 ms; install happens at the next request for it, and the game asked again 47 s later.
+- Next run: read PRT-STALLSAMPLE lines (where the game threads sit during a stall) and PRT-LONGWAIT cond/sema/evf/equeue lines; check PRT-VRAMIDLE keeps races under the budget without new upload hitches (`RYGT_VRAM_TRIM_IDLE_FRAMES=0` to compare).
+- Deferred: .meta compression, VMA defrag. Parked list unchanged.

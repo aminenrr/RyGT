@@ -1,3 +1,4 @@
+#include <cstring>
 #include "../include/Pthread.hpp"
 #include "../include/Mutex.hpp"
 #include "prx/libkernel/KernelErrors.hpp"
@@ -83,7 +84,19 @@ std::uint64_t LongWaitMs() {
     return ms;
 }
 
-void NoteLongWait(std::uint64_t waited_ms, bool adaptive) {
+// PRT-LONGWAIT (Round 8): a per-thread copy of the thread's name that lives for the whole run, so
+// a mutex can point at its owner's name without a lock. Filled once the game names the thread.
+const char* PrtStableThreadName() {
+    thread_local char* stable = nullptr;
+    thread_local std::uint32_t retry = 0;
+    if (stable != nullptr && stable[0] != '\0') return stable;
+    if (stable == nullptr) stable = new char[32]{}; // never freed: a mutex may still point at it
+    if ((retry++ & 1023u) != 0) return stable;
+    PrtCurrentThreadName(stable, 32);
+    return stable;
+}
+
+void NoteLongWait(std::uint64_t waited_ms, bool adaptive, const PthreadMutexPrivate* mutex, const char* holder) {
     static std::atomic<std::uint32_t> logged{0};
     const std::uint32_t n = logged.fetch_add(1, std::memory_order_relaxed);
     if (n >= 64 && n % 100 != 0) return;
@@ -99,13 +112,15 @@ void NoteLongWait(std::uint64_t waited_ms, bool adaptive) {
         static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000);
     char name[32] = {};
     PrtCurrentThreadName(name, sizeof(name));
-    std::fprintf(stderr, "[pthread] PRT-LONGWAIT: [%02d:%02d:%02d.%03lld] thread %s waited %llu ms for a %smutex (%u so far)\n",
+    std::fprintf(stderr, "[pthread] PRT-LONGWAIT: [%02d:%02d:%02d.%03lld] thread %s waited %llu ms for %smutex '%s' %p held by %s (%u so far)\n",
                  local.tm_hour, local.tm_min, local.tm_sec, ms, name[0] ? name : "(no name)",
-                 static_cast<unsigned long long>(waited_ms), adaptive ? "adaptive " : "", n + 1);
+                 static_cast<unsigned long long>(waited_ms), adaptive ? "adaptive " : "",
+                 mutex && mutex->_name[0] ? mutex->_name : "(no name)", static_cast<const void*>(mutex),
+                 holder && holder[0] ? holder : "(unknown)", n + 1);
 }
 
 template<typename TNative>
-void LockCounted(TNative& native, bool adaptive) {
+void LockCounted(TNative& native, bool adaptive, const PthreadMutexPrivate* mutex) {
     const int kind = adaptive ? 1 : 0;
     const bool stats = MutexStatsOn();
     if (stats) g_locks[kind].fetch_add(1, std::memory_order_relaxed);
@@ -128,11 +143,12 @@ void LockCounted(TNative& native, bool adaptive) {
         native.lock();
         return;
     }
+    const char* holder = mutex ? mutex->_owner_name.load(std::memory_order_relaxed) : nullptr;
     const auto start = std::chrono::steady_clock::now();
     native.lock();
     const auto waited = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
-    if (waited >= long_ms) NoteLongWait(waited, adaptive);
+    if (waited >= long_ms) NoteLongWait(waited, adaptive, mutex, holder);
 }
 
 PthreadMutex destroyedMutex() {
@@ -192,6 +208,7 @@ int acquireMutex(PthreadMutex mutex, TAcquire acquire, int unavailable, bool try
             return unavailable;
     }
     mutex->_owner.store(thread, std::memory_order_release);
+    if (LongWaitMs() != 0) mutex->_owner_name.store(PrtStableThreadName(), std::memory_order_relaxed); // PRT-LONGWAIT
     return 0;
 }
 
@@ -256,7 +273,7 @@ int APS5_VABI scePthreadMutexattrSetprotocol(PthreadMutexattr* attr, int protoco
     return 0;
 }
 
-int APS5_VABI scePthreadMutexInit(PthreadMutex* mutex, const PthreadMutexattr* attr, const char*) {
+int APS5_VABI scePthreadMutexInit(PthreadMutex* mutex, const PthreadMutexattr* attr, const char* name) {
     if (!mutex)
         throw std::invalid_argument("Mutex pointer is null");
     if (attr && !*attr)
@@ -265,6 +282,10 @@ int APS5_VABI scePthreadMutexInit(PthreadMutex* mutex, const PthreadMutexattr* a
     if (attr) {
         replacement->_type = (*attr)->type;
         replacement->_adaptive = (*attr)->adaptive;
+    }
+    if (name) { // PRT-LONGWAIT (Round 8)
+        std::strncpy(replacement->_name, name, sizeof(replacement->_name) - 1);
+        replacement->_name[sizeof(replacement->_name) - 1] = '\0';
     }
     std::lock_guard lock(initializationMutex);
     std::atomic_ref<PthreadMutex>(*mutex).store(replacement.release(), std::memory_order_release);
@@ -291,7 +312,7 @@ int APS5_VABI scePthreadMutexLock(PthreadMutex* mutex) {
     if (!resolved) return SCE_KERNEL_ERROR_EINVAL;
     const bool adaptive = resolved->_adaptive;
     return acquireMutex(resolved, [adaptive](auto& native) {
-        LockCounted(native, adaptive);
+        LockCounted(native, adaptive, resolved);
         return true;
     }, 0, false);
 }

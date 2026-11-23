@@ -25,6 +25,9 @@
 #endif
 
 #ifdef _WIN32
+// PRT-LONGWAIT (Round 8): defined in Pthread/src/Thread.cpp.
+void PrtCurrentThreadName(char* out, std::size_t size);
+
 namespace {
 constexpr std::int64_t WindowsEpochSeconds = 11644473600LL;
 struct WindowsLocalClock {
@@ -399,7 +402,60 @@ std::uint64_t KernelDiagWaker(const void* caller) {
 
 }  // extern "C++"
 
+// PRT-LONGWAIT (Round 8, RYGT_LONG_WAIT_LOG=<ms>, default 200, 0 = off): a cond, sema, event flag
+// or equeue wait that long logs its kind, the game's call site and the thread, but only on a busy
+// thread (one that finished 30 or more waits in the 2 s before), so idle workers that sleep for
+// seconds stay quiet. The Round 7 GT7 run had 0.6 to 0.8 s pauses with no mutex wait.
+namespace {
+std::uint64_t PrtLongWaitNanos() {
+    static const std::uint64_t nanos = [] {
+        const char* env = std::getenv("RYGT_LONG_WAIT_LOG");
+        if (!env || !*env) return std::uint64_t{200} * 1000000ULL;
+        const long long value = std::strtoll(env, nullptr, 10);
+        return value <= 0 ? std::uint64_t{0} : static_cast<std::uint64_t>(value) * 1000000ULL;
+    }();
+    return nanos;
+}
+
+void PrtNoteLongKernelWait(const char* kind, const void* caller, std::uint64_t waitedNanos, bool timedOut) {
+    const std::uint64_t limit = PrtLongWaitNanos();
+    if (limit == 0) return;
+    thread_local std::uint64_t window_start = 0;
+    thread_local std::uint32_t window_waits = 0;
+    thread_local std::uint32_t last_window_waits = 0;
+    const std::uint64_t now = GetMonotonicNanos();
+    if (window_start == 0) window_start = now;
+    if (now - window_start >= 2000000000ULL) {
+        last_window_waits = (now - window_start) < 4000000000ULL ? window_waits : 0;
+        window_waits = 0;
+        window_start = now;
+    }
+    const bool busy = window_waits + last_window_waits >= 30;
+    ++window_waits;
+    if (waitedNanos < limit || timedOut || !busy) return;
+    static std::atomic<std::uint32_t> logged{0};
+    const std::uint32_t n = logged.fetch_add(1, std::memory_order_relaxed);
+    if (n >= 200 && n % 100 != 0) return;
+    char name[32] = {};
+    PrtCurrentThreadName(name, sizeof(name));
+#ifdef _WIN32
+    const auto image = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
+    SYSTEMTIME local{};
+    GetLocalTime(&local);
+    std::fprintf(stderr, "[pthread] PRT-LONGWAIT: [%02u:%02u:%02u.%03u] thread %s (tid %lu) waited %llu ms on a %s at exe+0x%llx (%u so far)\n",
+                 local.wHour, local.wMinute, local.wSecond, local.wMilliseconds, name[0] ? name : "(no name)", GetCurrentThreadId(),
+                 static_cast<unsigned long long>(waitedNanos / 1000000ULL), kind,
+                 static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(caller) - image), n + 1);
+#else
+    (void)caller;
+    std::fprintf(stderr, "[pthread] PRT-LONGWAIT: thread %s waited %llu ms on a %s (%u so far)\n", name[0] ? name : "(no name)",
+                 static_cast<unsigned long long>(waitedNanos / 1000000ULL), kind, n + 1);
+#endif
+}
+}  // namespace
+
 void KernelTraceWait_nid_postfix(const char* kind, const void* caller, std::uint64_t waitedNanos, bool timedOut) {
+    PrtNoteLongKernelWait(kind, caller, waitedNanos, timedOut);
     if (KernelDiagEnabled()) {
         const KernelDiagZone zone = kind[0] == 'e' ? (kind[1] == 'q' ? KernelDiagZone::Equeue : KernelDiagZone::EventFlag)
                                   : kind[0] == 's' ? KernelDiagZone::Sema : KernelDiagZone::Cond;
