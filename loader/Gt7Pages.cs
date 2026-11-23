@@ -1786,7 +1786,6 @@ namespace RyGT
                 }
 
                 Process started;
-                string trophyKeyFile = null;
                 try
                 {
                     var start = new ProcessStartInfo(exe)
@@ -1798,20 +1797,18 @@ namespace RyGT
                     if (prewarmClean && string.IsNullOrEmpty(start.EnvironmentVariables["RYGT_LAUNCHER_PREWARM_CLEAN"]))
                         start.EnvironmentVariables["RYGT_LAUNCHER_PREWARM_CLEAN"] = "1";
                     // FEAT-GTS-254: the Advanced page's switches and other variables last, so they win.
-                    trophyKeyFile = TrophyStore.ApplyEnvironment(root, start);
+                    TrophyStore.ApplyEnvironment(root, start);
                     int customCount = CustomEnvironment.Apply(start, new Settings(GameInfo.GT7.IniPath(root)).Env);
                     if (customCount > 0) AppendSetupLog(root, GameInfo.GT7.TitleId, customCount + " custom environment variable(s) applied.");
                     started = Process.Start(start);
                 }
                 catch (Exception e)
                 {
-                    TrophyStore.DeleteKeyFile(root, trophyKeyFile);
                     AppendSetupLog(root, GameInfo.GT7.TitleId, "Could not start GT7: " + e.Message);
                     return;
                 }
-                if (started == null) { TrophyStore.DeleteKeyFile(root, trophyKeyFile); return; }
+                if (started == null) return;
                 using (Process game = started) game.WaitForExit();
-                TrophyStore.DeleteKeyFile(root, trophyKeyFile);
 
                 // FIX-GTS-491: after a GPU device loss the game is not started again. The interrupted
                 // session could not be resumed anyway, and the restart hid the crash from the player

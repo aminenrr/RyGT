@@ -7,9 +7,6 @@ using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Security.AccessControl;
-using System.Security.Cryptography;
-using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
@@ -17,13 +14,6 @@ using System.Xml;
 
 namespace RyGT
 {
-    class TrpEntry
-    {
-        public string Name;
-        public long Offset, Length;
-        public uint Flag;
-    }
-
     class TrophyInfo
     {
         public int Id;
@@ -33,108 +23,11 @@ namespace RyGT
         public DateTime? Unlocked;
     }
 
-    static class TrophyCrypto
+    // FEAT-GT7-187: the trophy files the player already extracted (plain XML). RyGT does not
+    // decrypt the game's trophy files.
+    static class TrophyXml
     {
-        public const uint TrpMagic = 0xDCA24D00;
-        public const int HeaderSize = 0x60, EntrySize = 0x40;
-        static readonly Regex HexKey = new Regex("^[0-9A-Fa-f]{32}$");
         public static readonly Regex NpCommIdPattern = new Regex("NPWR[0-9]{5}_[0-9]{2}");
-
-        public static bool ValidKey(string hex) { return hex != null && HexKey.IsMatch(hex); }
-
-        public static string CleanKey(string text)
-        {
-            return new string((text ?? "").Where(c => !char.IsWhiteSpace(c)).ToArray());
-        }
-
-        public static byte[] HexToBytes(string hex)
-        {
-            var bytes = new byte[hex.Length / 2];
-            for (int i = 0; i < bytes.Length; ++i)
-                bytes[i] = byte.Parse(hex.Substring(i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-            return bytes;
-        }
-
-        static uint U32(byte[] b, long at) { return (uint)(b[at] << 24 | b[at + 1] << 16 | b[at + 2] << 8 | b[at + 3]); }
-        static long U64(byte[] b, long at) { return (long)((ulong)U32(b, at) << 32 | U32(b, at + 4)); }
-
-        public static List<TrpEntry> ParseTrp(byte[] trp)
-        {
-            if (trp == null || trp.Length < HeaderSize) throw new InvalidDataException("The trophy file is too short.");
-            if (U32(trp, 0) != TrpMagic) throw new InvalidDataException("The trophy file is not a TRP (bad magic).");
-            uint count = U32(trp, 0x10), size = U32(trp, 0x14);
-            if (size < EntrySize || count > 4096 || HeaderSize + (long)count * size > trp.Length)
-                throw new InvalidDataException("The trophy file's entry table is damaged.");
-            var list = new List<TrpEntry>();
-            for (long i = 0; i < count; ++i)
-            {
-                long at = HeaderSize + i * size;
-                int end = 0;
-                while (end < 32 && trp[at + end] != 0) ++end;
-                var entry = new TrpEntry
-                {
-                    Name = Encoding.ASCII.GetString(trp, (int)at, end),
-                    Offset = U64(trp, at + 0x20), Length = U64(trp, at + 0x28), Flag = U32(trp, at + 0x30)
-                };
-                if (entry.Offset < 0 || entry.Length < 0 || entry.Offset + entry.Length > trp.Length)
-                    throw new InvalidDataException("The trophy file's entry " + entry.Name + " points outside the file.");
-                list.Add(entry);
-            }
-            return list;
-        }
-
-        public static byte[] EntryBytes(byte[] trp, TrpEntry entry)
-        {
-            var data = new byte[entry.Length];
-            Buffer.BlockCopy(trp, (int)entry.Offset, data, 0, data.Length);
-            return data;
-        }
-
-        static RijndaelManaged Aes128(byte[] key, byte[] iv)
-        {
-            return new RijndaelManaged { BlockSize = 128, KeySize = 128, Mode = CipherMode.CBC, Padding = PaddingMode.None, Key = key, IV = iv };
-        }
-
-        public static byte[] DeriveTrpKey(byte[] key, string npCommId)
-        {
-            var block = new byte[16];
-            var id = Encoding.ASCII.GetBytes(npCommId ?? "");
-            Buffer.BlockCopy(id, 0, block, 0, Math.Min(16, id.Length));
-            using (var aes = Aes128(key, new byte[16]))
-            using (var enc = aes.CreateEncryptor())
-                return enc.TransformFinalBlock(block, 0, 16);
-        }
-
-        public static string DecryptEsfm(byte[] trpKey, byte[] entry)
-        {
-            if (entry == null || entry.Length < 32) throw new InvalidDataException("The trophy entry is too short.");
-            var iv = new byte[16];
-            Buffer.BlockCopy(entry, 0, iv, 0, 16);
-            int length = (entry.Length - 16) / 16 * 16;
-            byte[] plain;
-            using (var aes = Aes128(trpKey, iv))
-            using (var dec = aes.CreateDecryptor())
-                plain = dec.TransformFinalBlock(entry, 16, length);
-            string text = Encoding.UTF8.GetString(plain);
-            int last = text.LastIndexOf('>');
-            return last >= 0 ? text.Substring(0, last + 1) : "";
-        }
-
-        public static byte[] EncryptEsfm(byte[] trpKey, byte[] iv, string xml)
-        {
-            var data = Encoding.UTF8.GetBytes(xml);
-            var padded = new byte[(data.Length + 15) / 16 * 16];
-            Buffer.BlockCopy(data, 0, padded, 0, data.Length);
-            using (var aes = Aes128(trpKey, iv))
-            using (var enc = aes.CreateEncryptor())
-            {
-                var cipher = enc.TransformFinalBlock(padded, 0, padded.Length);
-                var result = new byte[16 + cipher.Length];
-                Buffer.BlockCopy(iv, 0, result, 0, 16);
-                Buffer.BlockCopy(cipher, 0, result, 16, cipher.Length);
-                return result;
-            }
-        }
 
         public static bool LooksLikeTrophyConf(string xml)
         {
@@ -162,24 +55,6 @@ namespace RyGT
             if (printable < head.Length * 9 / 10) return "unreadable bytes";
             var tag = Regex.Match(head, "<([A-Za-z][A-Za-z0-9_-]*)");
             return tag.Success ? "XML starting with <" + tag.Groups[1].Value + ">" : "text without XML";
-        }
-
-        public static TrpEntry Find(List<TrpEntry> entries, string name)
-        {
-            return entries.FirstOrDefault(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-        }
-
-        public static string DecryptEntry(byte[] trp, List<TrpEntry> entries, string name, byte[] key, string npCommId)
-        {
-            var entry = Find(entries, name);
-            if (entry == null) return null;
-            if (entry.Flag != 3)
-            {
-                string text = Encoding.UTF8.GetString(EntryBytes(trp, entry));
-                int last = text.LastIndexOf('>');
-                return last >= 0 ? text.Substring(0, last + 1) : "";
-            }
-            return DecryptEsfm(DeriveTrpKey(key, npCommId), EntryBytes(trp, entry));
         }
 
         public static List<TrophyInfo> ParseTrophies(string xml)
@@ -248,46 +123,13 @@ namespace RyGT
 
     static class TrophyStore
     {
-        static readonly byte[] Entropy = Encoding.ASCII.GetBytes("ryGT7 trophy key FEAT-GT7-187");
-
         public static string UserDir(string root) { return Path.Combine(root, "user"); }
-        public static string KeyPath(string root) { return Path.Combine(UserDir(root), "trophy.key.dpapi"); }
+        // Left by launchers that kept a trophy key (removed): deleted when the Trophies page opens.
+        static string OldKeyPath(string root) { return Path.Combine(UserDir(root), "trophy.key.dpapi"); }
         static string PendingPath(string root) { return Path.Combine(UserDir(root), "trophy.keyfile.pending"); }
+        public static string TrophyDir(string root) { return Path.Combine(UserDir(root), "trophy"); }
         static string IniPath(string root) { return Path.Combine(UserDir(root), "trophy.ini"); }
         public static string AssetsDir(string root) { return Path.Combine(UserDir(root), "trophy_assets"); }
-
-        public static bool HasKey(string root) { return File.Exists(KeyPath(root)); }
-
-        public static void SaveKey(string root, string hex)
-        {
-            if (!TrophyCrypto.ValidKey(hex)) throw new ArgumentException("The trophy key is 32 hexadecimal characters.");
-            byte[] plain = Encoding.ASCII.GetBytes(hex);
-            byte[] sealedKey = ProtectedData.Protect(plain, Entropy, DataProtectionScope.CurrentUser);
-            Array.Clear(plain, 0, plain.Length);
-            Directory.CreateDirectory(UserDir(root));
-            string temp = KeyPath(root) + ".new";
-            File.WriteAllBytes(temp, sealedKey);
-            if (File.Exists(KeyPath(root))) File.Delete(KeyPath(root));
-            File.Move(temp, KeyPath(root));
-        }
-
-        public static string LoadKey(string root)
-        {
-            try
-            {
-                if (!HasKey(root)) return null;
-                byte[] plain = ProtectedData.Unprotect(File.ReadAllBytes(KeyPath(root)), Entropy, DataProtectionScope.CurrentUser);
-                string hex = Encoding.ASCII.GetString(plain);
-                Array.Clear(plain, 0, plain.Length);
-                return TrophyCrypto.ValidKey(hex) ? hex : null;
-            }
-            catch { return null; }
-        }
-
-        public static void DeleteKey(string root)
-        {
-            if (File.Exists(KeyPath(root))) File.Delete(KeyPath(root));
-        }
 
         public static bool ToastsOn(string root)
         {
@@ -342,54 +184,9 @@ namespace RyGT
             return grade;
         }
 
-        public static string PrepareKeyFile(string root)
+        public static void CleanUpOldKeyFiles(string root)
         {
-            string hex = LoadKey(root);
-            if (hex == null) return null;
-            string path = Path.GetTempFileName();
-            try
-            {
-                try
-                {
-                    var security = new FileSecurity();
-                    security.SetAccessRuleProtection(true, false);
-                    security.AddAccessRule(new FileSystemAccessRule(WindowsIdentity.GetCurrent().User, FileSystemRights.FullControl, AccessControlType.Allow));
-                    File.SetAccessControl(path, security);
-                }
-                catch { }
-                try { File.WriteAllText(PendingPath(root), path); } catch { }
-                File.WriteAllText(path, hex, Encoding.ASCII);
-                return path;
-            }
-            catch
-            {
-                DeleteKeyFile(root, path);
-                return null;
-            }
-        }
-
-        public static void DeleteKeyFile(string root, string path)
-        {
-            if (path == null) return;
-            try
-            {
-                if (File.Exists(path))
-                {
-                    try { File.WriteAllBytes(path, new byte[32]); } catch { }
-                    File.Delete(path);
-                }
-            }
-            catch { }
-            try
-            {
-                if (File.Exists(PendingPath(root)) && File.ReadAllText(PendingPath(root)).Trim() == path)
-                    File.Delete(PendingPath(root));
-            }
-            catch { }
-        }
-
-        public static void CleanUpLeftoverKeyFile(string root)
-        {
+            try { if (File.Exists(OldKeyPath(root))) File.Delete(OldKeyPath(root)); } catch { }
             try
             {
                 if (!File.Exists(PendingPath(root))) return;
@@ -406,17 +203,12 @@ namespace RyGT
             catch { }
         }
 
-        public static string ApplyEnvironment(string root, System.Diagnostics.ProcessStartInfo start)
+        public static void ApplyEnvironment(string root, System.Diagnostics.ProcessStartInfo start)
         {
-            string file = null;
-            try { file = PrepareKeyFile(root); } catch { }
-            if (file != null) start.EnvironmentVariables["RYGT_TROPHY_KEY_FILE"] = file;
-            else start.EnvironmentVariables.Remove("RYGT_TROPHY_KEY_FILE");
             if (!ToastsOn(root)) start.EnvironmentVariables["RYGT_TROPHY_TOAST"] = "0";
             try { WriteBuiltinAssets(root); } catch { }
             char test = TakeTestToast(root);
             if (test != '\0') start.EnvironmentVariables["RYGT_TROPHY_TOAST_TEST"] = test.ToString();
-            return file;
         }
 
         public static List<string> App0Layers(string root, string update, string game)
@@ -471,7 +263,7 @@ namespace RyGT
             try
             {
                 if (npbind != null)
-                    foreach (Match m in TrophyCrypto.NpCommIdPattern.Matches(Encoding.ASCII.GetString(File.ReadAllBytes(npbind))))
+                    foreach (Match m in TrophyXml.NpCommIdPattern.Matches(Encoding.ASCII.GetString(File.ReadAllBytes(npbind))))
                         if (!ids.Contains(m.Value)) ids.Add(m.Value);
             }
             catch { }
@@ -481,12 +273,12 @@ namespace RyGT
                 if (Directory.Exists(trophy))
                     foreach (var dir in Directory.GetDirectories(trophy))
                     {
-                        var m = TrophyCrypto.NpCommIdPattern.Match(Path.GetFileName(dir));
+                        var m = TrophyXml.NpCommIdPattern.Match(Path.GetFileName(dir));
                         if (m.Success && !ids.Contains(m.Value)) ids.Add(m.Value);
                     }
                 foreach (var file in UnlockFiles(root, null))
                 {
-                    var m = TrophyCrypto.NpCommIdPattern.Match(Path.GetFileName(file));
+                    var m = TrophyXml.NpCommIdPattern.Match(Path.GetFileName(file));
                     if (m.Success && !ids.Contains(m.Value)) ids.Add(m.Value);
                 }
             }
@@ -639,91 +431,91 @@ namespace RyGT
 
     class TrophySet
     {
-        public string NpCommId, TrpPath, TitleName = "";
+        public string NpCommId, Folder, TitleName = "";
         public List<TrophyInfo> Trophies = new List<TrophyInfo>();
         public Dictionary<string, Image> Icons = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
         public string UnlockFile;
 
-        public static string Test(string root, List<string> layers, string hex, out string trpPath, out byte[] trp, out List<TrpEntry> entries)
+        // The set whose extracted files are in user\trophy\<npCommId> (Xml\TROPCONF.XML, Xml\TROP.XML, Icons).
+        public static string FindExtracted(string root, List<string> layers, out string folder)
         {
-            trpPath = TrophyStore.FindGameFile(layers, Path.Combine("sce_sys", "trophy", "trophy00.trp"));
-            if (trpPath == null) throw new FileNotFoundException("sce_sys\\trophy\\trophy00.trp was not found in ryGT7's app0, the update or the game folder.");
-            trp = File.ReadAllBytes(trpPath);
-            entries = TrophyCrypto.ParseTrp(trp);
-            var conf = TrophyCrypto.Find(entries, "TROPCONF.ESFM");
-            if (conf == null) throw new InvalidDataException("trophy00.trp has no TROPCONF.ESFM.");
             var ids = TrophyStore.NpCommIds(root, layers);
-            if (ids.Count == 0) throw new InvalidDataException("The game's npCommId was not found (sce_sys\\npbind.dat).");
-            byte[] key = TrophyCrypto.HexToBytes(hex);
-            var tried = new List<string>();
             foreach (var id in ids)
             {
-                string xml;
-                try { xml = TrophyCrypto.DecryptEntry(trp, entries, conf.Name, key, id); }
-                catch (Exception e) { tried.Add(id + ": " + e.Message); continue; }
-                if (TrophyCrypto.LooksLikeTrophyConf(xml)) return id;
-                tried.Add(id + ": " + TrophyCrypto.Describe(xml));
+                string dir = Path.Combine(TrophyStore.TrophyDir(root), id);
+                string conf = Path.Combine(dir, "Xml", "TROPCONF.XML");
+                try
+                {
+                    if (File.Exists(conf) && TrophyXml.LooksLikeTrophyConf(File.ReadAllText(conf)))
+                    {
+                        folder = dir;
+                        return id;
+                    }
+                }
+                catch { }
             }
-            throw new InvalidDataException("The key does not decrypt the game's trophy file. Check the key.\n\nTried " +
-                                           string.Join("; ", tried) + " (" + trpPath + ")");
+            folder = null;
+            string where = ids.Count > 0 ? Path.Combine(TrophyStore.TrophyDir(root), ids[0]) : Path.Combine(TrophyStore.TrophyDir(root), "<npCommId>");
+            throw new FileNotFoundException("The trophy files are not there. Put the extracted trophy files (Xml\\TROPCONF.XML, Xml\\TROP.XML and the Icons folder) in " +
+                                            where + ". Trophies stay off in the game until they are.");
         }
 
-        public static TrophySet Load(string root, List<string> layers, string hex)
+        public static TrophySet Load(string root, List<string> layers)
         {
-            string trpPath; byte[] trp; List<TrpEntry> entries;
-            string id = Test(root, layers, hex, out trpPath, out trp, out entries);
-            byte[] key = TrophyCrypto.HexToBytes(hex);
-            var set = new TrophySet { NpCommId = id, TrpPath = trpPath };
-            var trop = TrophyCrypto.Find(entries, "TROP.ESFM") ??
-                       entries.Where(e => e.Name.StartsWith("TROP_", StringComparison.OrdinalIgnoreCase) && e.Name.EndsWith(".ESFM", StringComparison.OrdinalIgnoreCase))
-                              .OrderBy(e => e.Name).FirstOrDefault();
-            if (trop == null) throw new InvalidDataException("trophy00.trp has no TROP.ESFM.");
-            string xml = TrophyCrypto.DecryptEntry(trp, entries, trop.Name, key, id);
-            set.Trophies = TrophyCrypto.ParseTrophies(xml);
+            string folder;
+            string id = FindExtracted(root, layers, out folder);
+            var set = new TrophySet { NpCommId = id, Folder = folder };
+            string tropPath = Path.Combine(folder, "Xml", "TROP.XML");
+            if (!File.Exists(tropPath)) tropPath = Path.Combine(folder, "Xml", "TROPCONF.XML");
+            string xml = File.ReadAllText(tropPath);
+            set.Trophies = TrophyXml.ParseTrophies(xml);
             var title = Regex.Match(xml, "<title-name>([^<]*)</title-name>");
             if (title.Success) set.TitleName = System.Net.WebUtility.HtmlDecode(title.Groups[1].Value.Trim());
-            string cache = Path.Combine(TrophyStore.UserDir(root), "trophy", id, "launcher_icons");
-            foreach (var entry in entries.Where(e => e.Name.EndsWith(".PNG", StringComparison.OrdinalIgnoreCase)))
-            {
-                string cached = Path.Combine(cache, entry.Name);
-                try
+            string icons = Path.Combine(folder, "Icons");
+            string cache = Path.Combine(folder, "launcher_icons");
+            if (Directory.Exists(icons))
+                foreach (var path in Directory.GetFiles(icons, "*.PNG"))
                 {
-                    if (File.Exists(cached))
+                    string name = Path.GetFileName(path).ToUpperInvariant();
+                    string cached = Path.Combine(cache, name);
+                    try
                     {
-                        set.Icons[entry.Name] = LoadBitmap(File.ReadAllBytes(cached));
-                        continue;
+                        if (File.Exists(cached))
+                        {
+                            set.Icons[name] = LoadBitmap(File.ReadAllBytes(cached));
+                            continue;
+                        }
                     }
-                }
-                catch { }
-                try
-                {
-                    using (var stream = new MemoryStream(TrophyCrypto.EntryBytes(trp, entry)))
-                    using (var image = Image.FromStream(stream))
+                    catch { }
+                    try
                     {
-                        var small = new Bitmap(56, 56, PixelFormat.Format32bppArgb);
-                        using (var g = Graphics.FromImage(small))
+                        using (var stream = new MemoryStream(File.ReadAllBytes(path)))
+                        using (var image = Image.FromStream(stream))
                         {
-                            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                            g.DrawImage(image, new Rectangle(0, 0, 56, 56));
+                            var small = new Bitmap(56, 56, PixelFormat.Format32bppArgb);
+                            using (var g = Graphics.FromImage(small))
+                            {
+                                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                                g.DrawImage(image, new Rectangle(0, 0, 56, 56));
+                            }
+                            set.Icons[name] = small;
+                            try
+                            {
+                                Directory.CreateDirectory(cache);
+                                small.Save(cached, ImageFormat.Png);
+                            }
+                            catch { }
                         }
-                        set.Icons[entry.Name] = small;
-                        try
-                        {
-                            Directory.CreateDirectory(cache);
-                            small.Save(cached, ImageFormat.Png);
-                        }
-                        catch { }
                     }
+                    catch { }
                 }
-                catch { }
-            }
             var unlocks = TrophyStore.UnlockFiles(root, id);
             if (unlocks.Count > 0)
             {
                 set.UnlockFile = unlocks[0];
                 try
                 {
-                    var earned = TrophyCrypto.ParseUnlocks(File.ReadAllText(unlocks[0]));
+                    var earned = TrophyXml.ParseUnlocks(File.ReadAllText(unlocks[0]));
                     foreach (var t in set.Trophies)
                     {
                         DateTime? when;
@@ -782,75 +574,21 @@ namespace RyGT
     {
         TableLayoutPanel trophyList;
         Label trophySummary;
-        TextBox trophyKeyBox;
         bool trophiesLoaded;
 
         List<string> TrophyLayers() { return TrophyStore.App0Layers(root, settings.Update, settings.Game); }
 
-        string TrophyKey()
-        {
-            string typed = TrophyCrypto.CleanKey(trophyKeyBox.Text);
-            if (TrophyCrypto.ValidKey(typed)) return typed;
-            return TrophyStore.LoadKey(root);
-        }
-
         void BuildTrophiesPage()
         {
-            TrophyStore.CleanUpLeftoverKeyFile(root);
+            TrophyStore.CleanUpOldKeyFiles(root);
             trophiesLoaded = false;
             var page = NewPage("Trophies", "Trophies",
-                "Gran Turismo 7's trophies, read from your own game files. They need your trophy key (32 hexadecimal characters), " +
-                "which stays on this PC, encrypted for your Windows account.");
+                "Gran Turismo 7's trophies, read from trophy files you already extracted from your own game.");
 
-            var keySection = Section(page, "Trophy key");
-            keySection.Controls.Add(FieldLabel("Key"));
-            var field = new Card(Dark.Field) { AutoSize = false, Size = new Size(420, 32), Radius = 3, Edge = Color.Empty, Padding = new Padding(10, 7, 10, 6), Margin = new Padding(0, 0, 0, 2) };
-            trophyKeyBox = new TextBox { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, Margin = new Padding(0), MaxLength = 64, UseSystemPasswordChar = true };
-            trophyKeyBox.Text = TrophyStore.LoadKey(root) ?? "";
-            field.Controls.Add(trophyKeyBox);
-            keySection.Controls.Add(field);
-            var keyState = Hint(TrophyStore.HasKey(root) ? "A key is saved." : "No key saved: trophies stay off in the game.");
-            keySection.Controls.Add(keyState);
-            var show = new Button { Text = "Show", AutoSize = true, Margin = new Padding(0, 0, 10, 0) };
-            show.Click += delegate
-            {
-                trophyKeyBox.UseSystemPasswordChar = !trophyKeyBox.UseSystemPasswordChar;
-                show.Text = trophyKeyBox.UseSystemPasswordChar ? "Show" : "Hide";
-            };
-            var save = new Button { Text = "Save", AutoSize = true, Tag = "accent", Margin = new Padding(0, 0, 10, 0) };
-            save.Click += delegate
-            {
-                string hex = TrophyCrypto.CleanKey(trophyKeyBox.Text);
-                if (!TrophyCrypto.ValidKey(hex))
-                {
-                    MessageBox.Show(this, "The trophy key is 32 hexadecimal characters (0-9, A-F).", "Trophies");
-                    return;
-                }
-                try
-                {
-                    TrophyStore.SaveKey(root, hex);
-                    keyState.Text = "A key is saved.";
-                    trophiesLoaded = false;
-                    RefreshTrophies();
-                }
-                catch (Exception e) { MessageBox.Show(this, "Could not save the key: " + e.Message, "Trophies"); }
-            };
-            var test = new Button { Text = "Test", AutoSize = true, Margin = new Padding(0, 0, 10, 0) };
-            test.Click += delegate { TestTrophyKey(); };
-            var remove = new Button { Text = "Remove", AutoSize = true, Margin = new Padding(0) };
-            remove.Click += delegate
-            {
-                if (MessageBox.Show(this, "Remove the saved trophy key? The game then runs without trophies.", "Trophies", MessageBoxButtons.OKCancel) != DialogResult.OK)
-                    return;
-                try { TrophyStore.DeleteKey(root); } catch (Exception e) { MessageBox.Show(this, "Could not remove the key: " + e.Message, "Trophies"); return; }
-                trophyKeyBox.Text = "";
-                keyState.Text = "No key saved: trophies stay off in the game.";
-                trophiesLoaded = false;
-                RefreshTrophies();
-            };
-            var keyButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 10, 0, 0), BackColor = Color.Transparent };
-            keyButtons.Controls.AddRange(new Control[] { show, save, test, remove });
-            keySection.Controls.Add(keyButtons);
+            var filesSection = Section(page, "Trophy files");
+            filesSection.Controls.Add(Hint("Put the extracted trophy files in user\\trophy\\<npCommId> (for GT7, NPWR followed by 5 digits, _ and 2 digits): " +
+                                           "Xml\\TROPCONF.XML, Xml\\TROP.XML and the Icons folder. Without them the game runs without trophies."));
+            filesSection.Controls.Add(OpenRow("The trophy folder", OpenTrophyFolder, "Open trophy folder"));
 
             var popups = Section(page, "Pop-ups");
             var toast = new ToggleRow { Text = "Show trophy pop-ups", Checked = TrophyStore.ToastsOn(root) };
@@ -882,36 +620,24 @@ namespace RyGT
             pages["Trophies"].VisibleChanged += delegate { if (pages["Trophies"].Visible && !trophiesLoaded) RefreshTrophies(); };
         }
 
-        void TestTrophyKey()
-        {
-            string hex = TrophyKey();
-            if (hex == null)
-            {
-                MessageBox.Show(this, "Enter your 32-character trophy key first.", "Trophies");
-                return;
-            }
-            string id;
-            try
-            {
-                Cursor = Cursors.WaitCursor;
-                string trpPath; byte[] trp; List<TrpEntry> entries;
-                id = TrophySet.Test(root, TrophyLayers(), hex, out trpPath, out trp, out entries);
-            }
-            catch (Exception e)
-            {
-                Cursor = Cursors.Default;
-                MessageBox.Show(this, "The test failed: " + e.Message, "Trophies");
-                return;
-            }
-            Cursor = Cursors.Default;
-            ShowTrophyPreview("Your key works: it decrypts the game's trophies (" + id + ").");
-        }
-
         void ShowTrophyPreview(string header)
         {
             try { TrophyStore.WriteBuiltinAssets(root); } catch { }
             using (var form = new TrophyPreviewForm(root, lastTrophySet, header))
                 form.ShowDialog(this);
+        }
+
+        void OpenTrophyFolder()
+        {
+            try
+            {
+                string dir = TrophyStore.TrophyDir(root);
+                var ids = TrophyStore.NpCommIds(root, TrophyLayers());
+                if (ids.Count > 0) dir = Path.Combine(dir, ids[0]);
+                Directory.CreateDirectory(dir);
+                System.Diagnostics.Process.Start("explorer.exe", "\"" + dir + "\"");
+            }
+            catch (Exception e) { MessageBox.Show(this, "Could not open the folder: " + e.Message, "Trophies"); }
         }
 
         void OpenCustomTrophyFolder()
@@ -933,12 +659,6 @@ namespace RyGT
             trophiesLoaded = true;
             int generation = ++trophyGeneration;
             ClearTrophyList();
-            string hex = TrophyStore.LoadKey(root);
-            if (hex == null)
-            {
-                trophySummary.Text = "No trophy key saved";
-                return;
-            }
             trophySummary.Text = "Loading trophies\u2026";
             string where = root;
             var layers = TrophyLayers();
@@ -948,7 +668,7 @@ namespace RyGT
                 Exception error = null;
                 try
                 {
-                    set = TrophySet.Load(where, layers, hex);
+                    set = TrophySet.Load(where, layers);
                     set.PrepareRowIcons();
                 }
                 catch (Exception e) { error = e; }
@@ -979,7 +699,7 @@ namespace RyGT
             trophyList.SuspendLayout();
             if (error != null)
             {
-                trophySummary.Text = "Trophies could not be read";
+                trophySummary.Text = "No trophy files";
                 trophyList.Controls.Add(Hint(error.Message));
                 trophyList.ResumeLayout();
                 return;

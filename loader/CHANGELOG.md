@@ -22,11 +22,12 @@ CI fails when the two disagree.
 
 ## 0.3.13 - 2026-11-21
 
-* FEAT-GT7-187/189: GT7 gets a Trophies page. The player's own trophy key (kept with Windows DPAPI in
-  user\trophy.key.dpapi), a Test of it against the game's trophy00.trp, the trophy list with what is
-  earned, the pop-up switch, a pop-up preview and a custom folder for cups, sounds and font. At Play the
-  key goes to GT7 in a short-lived file (RYGT_TROPHY_KEY_FILE), deleted when the game exits. The built-in
-  cups, chimes and Inter font are embedded in RyGTLauncher.exe. GT7 only. Needs the renderer side (shadGT #75).
+* FEAT-GT7-187/189: GT7 gets a Trophies page. It reads trophy files the player already extracted into
+  user\trophy\<npCommId> (Xml\TROPCONF.XML, Xml\TROP.XML, Icons) and shows the trophy list with what is
+  earned, the pop-up switch, a pop-up preview and a custom folder for cups, sounds and font. RyGT does not
+  decrypt the game's trophy files and asks for no key; a trophy key file left by an earlier test build is
+  deleted. The built-in cups, chimes and Inter font are embedded in RyGTLauncher.exe. GT7 only. Needs the
+  renderer side (shadGT #75).
 
 ## 0.3.12 - 2026-11-21
 
