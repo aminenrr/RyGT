@@ -270,6 +270,9 @@ def assemble(commit, flavor, channel, suffix):
     place(runtime_folder / 'ryty-wheel-probe.exe', 'tools/ryty-wheel-probe.exe')
     # FEAT-RT-020: the unified launcher starts GT7's optional pre-warmer from tools/.
     place(verify_artifact(runtime_folder, 'ryty_prewarm.exe', commit), 'tools/ryty_prewarm.exe')
+    # PRT-TROPHYEXTRACT (fork, pr-tests): the trophy extractor the launcher build makes beside itself.
+    if (launcher_folder / 'RyGTTrophyExtract.exe').is_file():
+        place(verify_artifact(launcher_folder, 'RyGTTrophyExtract.exe', commit), 'tools/RyGTTrophyExtract.exe')
     for library_name in RENDERER_LIBRARIES:
         place(verify_artifact(renderer_folder, library_name, commit), 'libs/' + library_name)
     for tool_name in RENDERER_TOOLS:

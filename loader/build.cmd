@@ -19,3 +19,7 @@ if /i "%~2"=="Diagnostics" set SYMBOLS=/debug:full /pdb:"%OUT%\RyGTLauncher.pdb"
     "%~dp0Updater.cs" "%~dp0ObsoleteSettings.cs" ^
     "%~dp0GT7Setup.cs" "%~dp0Bindings.cs" "%~dp0ControlsPage.cs" "%~dp0Wheel.cs" "%~dp0DlssDownload.cs" "%~dp0Online.cs" "%~dp0Trophies.cs" ^
     /resource:"%~dp0trophy_assets\bronze.png",trophy.bronze.png /resource:"%~dp0trophy_assets\silver.png",trophy.silver.png /resource:"%~dp0trophy_assets\gold.png",trophy.gold.png /resource:"%~dp0trophy_assets\platinum.png",trophy.platinum.png /resource:"%~dp0trophy_assets\trophy.wav",trophy.trophy.wav /resource:"%~dp0trophy_assets\platinum.wav",trophy.platinum.wav /resource:"%~dp0trophy_assets\font.ttf",trophy.font.ttf /resource:"%~dp0trophy_assets\font-LICENSE.txt",trophy.font-LICENSE.txt
+if errorlevel 1 exit /b 1
+rem PRT-TROPHYEXTRACT (fork, pr-tests): RyGTTrophyExtract.exe, extracts trophy00.trp with the player's own key.
+"%CSC%" /nologo /target:winexe /optimize+ /win32icon:"%~dp0ryGT.ico" /out:"%OUT%\RyGTTrophyExtract.exe" ^
+    /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Security.dll "%~dp0TrophyExtract.cs"
