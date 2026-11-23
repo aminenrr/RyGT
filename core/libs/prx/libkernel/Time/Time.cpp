@@ -402,7 +402,7 @@ std::uint64_t KernelDiagWaker(const void* caller) {
 
 }  // extern "C++"
 
-// PRT-LONGWAIT (Round 8, RYGT_LONG_WAIT_LOG=<ms>, default 200, 0 = off): a cond, sema, event flag
+// PRT-LONGWAIT (Round 8, RYGT_LONG_WAIT_LOG=<ms>, default 0 since Round 9, 0 = off): a cond, sema, event flag
 // or equeue wait that long logs its kind, the game's call site and the thread, but only on a busy
 // thread (one that finished 30 or more waits in the 2 s before), so idle workers that sleep for
 // seconds stay quiet. The Round 7 GT7 run had 0.6 to 0.8 s pauses with no mutex wait.
@@ -410,7 +410,7 @@ namespace {
 std::uint64_t PrtLongWaitNanos() {
     static const std::uint64_t nanos = [] {
         const char* env = std::getenv("RYGT_LONG_WAIT_LOG");
-        if (!env || !*env) return std::uint64_t{200} * 1000000ULL;
+        if (!env || !*env) return std::uint64_t{0};
         const long long value = std::strtoll(env, nullptr, 10);
         return value <= 0 ? std::uint64_t{0} : static_cast<std::uint64_t>(value) * 1000000ULL;
     }();

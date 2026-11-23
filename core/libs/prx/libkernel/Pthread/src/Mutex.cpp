@@ -71,13 +71,13 @@ bool MutexStatsOn() {
     return on;
 }
 
-// PRT-LONGWAIT (Round 7, RYGT_LONG_WAIT_LOG=<ms>, default 200, 0 = off): a game thread blocked
+// PRT-LONGWAIT (Round 7, RYGT_LONG_WAIT_LOG=<ms>, default 0 since Round 9, 0 = off): a game thread blocked
 // that long for a mutex logs the time, its name and the wait. Only the blocked path is timed.
 // Round 6 GT7 had 1 to 1.5 s pauses with no GPU, present or compile wait.
 std::uint64_t LongWaitMs() {
     static const std::uint64_t ms = [] {
         const char* env = std::getenv("RYGT_LONG_WAIT_LOG");
-        if (!env || !*env) return std::uint64_t{200};
+        if (!env || !*env) return std::uint64_t{0};
         const long long value = std::strtoll(env, nullptr, 10);
         return value <= 0 ? std::uint64_t{0} : static_cast<std::uint64_t>(value);
     }();

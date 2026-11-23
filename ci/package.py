@@ -337,6 +337,10 @@ def assemble(commit, flavor, channel, suffix):
         provenance['symbols'] = [json.loads((folder / 'SYMBOLS.json').read_text(encoding='utf-8-sig')) for folder in (launcher_folder, renderer_folder)]
         shutil.copy2(root / 'ci/diagnostics/DEBUG-README.txt', stage / 'README.txt')
     else:
+        # PRT-STALLSYM (pr-tests only): ship the renderer PDB so stall samples name functions.
+        renderer_pdb = renderer_folder / 'libSceVideoOut.pdb'
+        if renderer_pdb.is_file():
+            shutil.copy2(renderer_pdb, stage / 'libs/libSceVideoOut.pdb')
         (stage / 'README.txt').write_text(
             'RyGT Release CI package (ci)\n\nRun RyGTLauncher.exe to set up your own decrypted GT Sport CUSA03220 v1.69 and/or\n'
             'Gran Turismo 7 CUSA24769 dumps; both games run from this one folder.\n'
@@ -347,7 +351,7 @@ def assemble(commit, flavor, channel, suffix):
             '(AMD FidelityFX runtime) or taken from the source repository: see BUILD_INFO.txt.\n'
             'This is a CI artifact, not a tagged release. See BUILD_INFO.txt and SHA256SUMS.txt.\n', encoding='utf-8')
     (stage / 'BUILD_INFO.txt').write_text(json.dumps(provenance, indent=2) + '\n', encoding='utf-8')
-    allowed_pdb = {'RyGTLauncher.pdb', 'libs/libSceVideoOut.pdb'} if suffix else set()
+    allowed_pdb = {'RyGTLauncher.pdb', 'libs/libSceVideoOut.pdb'} if suffix else {'libs/libSceVideoOut.pdb'}
     for file in stage.rglob('*'):
         if file.is_file() and file.suffix.lower() == '.pdb' and file.relative_to(stage).as_posix() not in allowed_pdb:
             raise RuntimeError('Unexpected packaged symbols')

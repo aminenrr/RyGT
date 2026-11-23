@@ -156,8 +156,12 @@ class PackageTests(unittest.TestCase):
                 with zipfile.ZipFile(archive) as z:
                     names = {n.removeprefix(prefix) for n in z.namelist()}
                     pdbs = {n for n in names if n.endswith('.pdb')}
-                    self.assertEqual(pdbs, {'RyGTLauncher.pdb', 'libs/libSceVideoOut.pdb'} if variant['channel'] == 'debug-ci' else set())
-                    self.assertEqual('tools/diagnostics/Start-Capture.cmd' in names, bool(pdbs))
+                    debug = variant['channel'] == 'debug-ci'
+                    if debug:
+                        self.assertEqual(pdbs, {'RyGTLauncher.pdb', 'libs/libSceVideoOut.pdb'})
+                    else:
+                        self.assertTrue(pdbs <= {'libs/libSceVideoOut.pdb'})
+                    self.assertEqual('tools/diagnostics/Start-Capture.cmd' in names, debug)
                     config = json.loads(z.read(prefix + 'user/custom_configs/CUSA03220.json'))
                     self.assertTrue(config['GPU']['precompile_shaders'])
                     self.assertTrue(config['Vulkan']['pipeline_cache_enabled'])
