@@ -311,7 +311,7 @@ int APS5_VABI scePthreadMutexLock(PthreadMutex* mutex) {
     auto* resolved = resolveMutex(mutex, true);
     if (!resolved) return SCE_KERNEL_ERROR_EINVAL;
     const bool adaptive = resolved->_adaptive;
-    return acquireMutex(resolved, [adaptive](auto& native) {
+    return acquireMutex(resolved, [adaptive, resolved](auto& native) {
         LockCounted(native, adaptive, resolved);
         return true;
     }, 0, false);
