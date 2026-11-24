@@ -242,6 +242,41 @@ for a picture compare. Send stdout.log, stderr.log, setup.log.
   audio thread under 20%, actUnder 0, no crackle.
 - Idea, not done: give every guest thread Orbis MXCSR 0x9fc0 at creation (broader fix, other game threads).
 
+## Round 17 test results (owner 2026-11-24 21:05-22:20 GMT, defaults, logs work/logs/r17 in the Hark project)
+- No crash in a long run. Last race = stress test (20 cars, rain, one of the hardest tracks): perf solid except new-shader stutter.
+- Audio PASS: PRT-AUDIOFTZ set once, MXCSR 0x9fe0 held all run, audio thread max 20% (mostly 13-17%), no crackle.
+- Races about 42-52 fps; stress race 27-42 fps, GPU busy 93%, VRAM 7.7 GB of 6342 MB.
+- 500 ms+ stalls mostly "pipelines building" (new content), up to 3.9 s (21:22:41) and a cluster at 22:07-22:10.
+  Paired ~0.65 s stalls with nothing compiling (115 readback waits x 7 ms) were out of race (menus, loads).
+- Photo: first Scapes photo black backdrop (parked, see Parked). Later Scapes + replay photos OK.
+- DRIVER CACHE PROBLEM: shards loaded 874/875 MB, saved at exit 1143/1154 MB. PrtShardRotateBytes is hardcoded
+  1024 MB (unless SHADGT_DRIVER_CACHE_ROTATE_MB is set), so the next start moves both to .old, the driver starts
+  empty, and PRT-DRVKEEP deletes .old after a good save. PRT-SPLASHSKIP still trusts prewarm.built (identity =
+  renderer, driver, shard count), so nothing is rebuilt at the splash: all stutter lands in game.
+  Launcher "Unlimited" = SHADGT_DRIVER_CACHE_MAX_MB=-1 = load limit only; rotation (FIX-SGT-010) is separate and
+  exists because the driver keeps the whole file in RAM (2.96 GB file -> 15 GiB resident, title_defaults.h).
+  Owner workaround until R18: SHADGT_DRIVER_CACHE_ROTATE_MB=2048.
+
+## Round 18 plan (owner wants a permanent driver cache fix before anything else; no more size tweaks)
+Why it empties: launcher Unlimited = SHADGT_DRIVER_CACHE_MAX_MB=-1 = load size limit only. Rotation is separate:
+FIX-SGT-010 (driver holds whole file in RAM: 2.96 GB file -> 15 GiB resident) + PrtShardRotateBytes hardcoded
+1024 MB for pr-tests shards. Plus PRT-SPLASHSKIP trusts prewarm.built after a rotation -> nothing rebuilt at splash.
+Also 1306 MB single file gave 0 hits (never measured per pipeline).
+
+1. PRT-DRVHIT: VK_EXT_pipeline_creation_feedback, per segment hits/misses (10 s + exit). Measures the real size limit.
+2. PRT-DRVSEG (replaces shards+rotation in GT7): segment files capped ~600 MB; index file pipeline hash -> segment;
+   known pipelines created with their segment's cache; new ones go to the open segment; full segment sealed
+   (loaded, never saved again, never grows). Only the open segment is saved at exit. No size-based rotation.
+   Launcher Unlimited = no limit on total segments.
+3. PRT-DRVSTALE: per segment last-used session; segment with mostly unused pipelines for N sessions is dropped,
+   its still-used pipelines queued to splash prewarm.
+4. PRT-SPLASHVERIFY: any segment missing/rejected/rotated/driver UUID change -> prewarm.built ignored, splash
+   rebuilds those records (stutter on splash, not in race).
+5. Migration: shard0/shard1 imported as sealed segments 0 and 1 (no rebuild); if PRT-DRVHIT shows 0 hits they are
+   dropped and rebuilt at splash once.
+6. PRT-DRVMEM: process private/working set after cache load + at exit.
+Switches: new behavior on in GT7 only with owner OK (requested). Old shard switches kept as fallback.
+
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
@@ -249,6 +284,9 @@ pread error 5 / errno 9 on savedata; read-write alias throws (quiet, watch).
 First Scapes photo of a session can be black (R17, 2026-11-24): photo draw waits, but a 1600x1800 draw
 (0x102fe00000) in the same frame is skipped by FIX-GT7-131 and read empty later; suspect the FIX-GT7-102
 one-off frame budget. Fix idea: photo window ignores that budget.
+Research (parked, owner 2026-11-24): (1) faster shader compilation (translation + driver pipeline build time);
+(2) a shader manifest stored next to the game save, used by the launcher prewarm to rebuild the shader cache
+when the shader folder is deleted.
 Deferred: .meta compression of the shader store, VMA defrag, PRELOADEVICT.
 Upstream picks not taken: FIX-SGT-116, FEAT-SGT-118 (#108, parked), FIX-SGT-119, review fix 88d1d70c (conflicts); #99 HDR (dropped);
 FIX-SGT-124, PERF-SGT-126 (AMD only); FIX-GTS-528/529 (GT Sport).
@@ -271,7 +309,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 - R15 2026-11-24: REDZONESKIP (off) for the audio mix loop. R14 test: no felt hitches (photo then race too), race VRAM 7.0-7.2 GB after a photo with no hitches (trim not needed); crackle = audio_diag underruns while the mixer thread is at 80-99%.
 - R16 2026-11-24: AUDIOMXCSR log, AUDIOFTZ (off). R15 test: red-zone skip works but no audio gain (thread still 80-98%).
 - R16b 2026-11-24: AUDIOFAULT log, AUDIOCORE (off). R16 CI cancelled before test.
-- R17 2026-11-24: AUDIOFTZ on in GT7. R16b test: denormals were the audio crackle (80-92% to 15-18%, underruns 0); AUDIOCORE no gain.
+- R17 2026-11-24: AUDIOFTZ on in GT7. R17 test: audio PASS, no crash; driver cache shards over 1024 MB rotate (R18). R16b test: denormals were the audio crackle (80-92% to 15-18%, underruns 0); AUDIOCORE no gain.
 
 ## Fix log (one row per change; test column = owner result)
 | date | repo | commit | what (switches) | default | CI | test |
