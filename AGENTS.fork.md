@@ -215,6 +215,19 @@ for a picture compare. Send stdout.log, stderr.log, setup.log.
 - Test: run 1 defaults + RYGT_AUDIO_DIAG=1 (read MXCSR). If FTZ/DAZ show off, run 2 with RYGT_AUDIO_FTZ=1:
   audio thread %, underruns vs R15 (4032), crackle. If MXCSR is already 0x9fc0, denormal theory is dead.
 
+## Round 16b (owner GO 2026-11-24 16:01 GMT, built shadGT 9f99af6b; R16 CI 45428135349 cancelled)
+- R15 logs: audio thread 15-21% of a core in kernel time, also in unsampled windows (plain float mix
+  loop should be near 0); it shares the P-core mask 0xfff with GpuRecorder, GpuCommandProcessor,
+  VkCommands, PresentThread, Job#0 ([pcores] lines), so it may sit next to a busy hyperthread.
+- PRT-AUDIOFAULT (shadGT, `RYGT_AUDIO_FAULT_LOG`, GT7 on with AUDIOLOAD, log only): first-in-line VEH counts
+  exceptions on the audio thread (never handles one); PRT-AUDIOLOAD line adds "process page faults n;
+  PRT-AUDIOFAULT n exceptions on it (last k: codes ..; areas ..; at ..)".
+- PRT-AUDIOCORE (RyGT CoreBoost.cpp, `RYGT_AUDIO_CORE=1`, default OFF, hybrid CPU + RYGT_PCORES on): last
+  P-core to the audio thread alone (one logical CPU, highest priority); other busy threads and all other
+  game threads kept off both logical CPUs of that core. stderr "[pcores] PRT-AUDIOCORE: ..." line.
+- Test: run 1 defaults + RYGT_AUDIO_DIAG=1 (MXCSR + fault counts). Run 2 RYGT_AUDIO_FTZ=1 only if FTZ/DAZ off.
+  Run 3 RYGT_AUDIO_CORE=1 (+ FTZ if it helped): audio thread %, kernel %, underruns vs R15 (4032), crackle.
+
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
@@ -240,6 +253,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 - R13 2026-11-24: PHOTOFIX (STAGESHRINK v2 off), LEASEASYNC on, PRT log lines to Warning, AUDIOLOAD diag; ports #119, #115, #118 (off); #105 already in. R12 test: bat 16 vs 22 hitches, black photos from STAGESHRINK v2, audio thread 95-99% core.
 - R15 2026-11-24: REDZONESKIP (off) for the audio mix loop. R14 test: no felt hitches (photo then race too), race VRAM 7.0-7.2 GB after a photo with no hitches (trim not needed); crackle = audio_diag underruns while the mixer thread is at 80-99%.
 - R16 2026-11-24: AUDIOMXCSR log, AUDIOFTZ (off). R15 test: red-zone skip works but no audio gain (thread still 80-98%).
+- R16b 2026-11-24: AUDIOFAULT log, AUDIOCORE (off). R16 CI cancelled before test.
 
 ## Fix log (one row per change; test column = owner result)
 | date | repo | commit | what (switches) | default | CI | test |
@@ -345,3 +359,5 @@ Not ported: rygt7 10d6502 "Verbose logs" toggle, c47d3b4 HD UI and all DLSS / HD
 | 2026-11-24 | shadGT | 22667bc3 | Round 15 PRT-REDZONESKIP: no red-zone trampolines in GT7 audio mix loop (`RYGT_AUDIO_MIX_REDZONE_SKIP`) | off | R15 run | works, no audio gain; keep off |
 | 2026-11-24 | shadGT | deb8f310 | Round 16 PRT-AUDIOMXCSR: audio thread MXCSR in PRT-AUDIOLOAD (`RYGT_AUDIO_MXCSR_LOG`, log only) | GT7 on | R16 run | |
 | 2026-11-24 | shadGT | deb8f310 | Round 16 PRT-AUDIOFTZ: set FTZ+DAZ on the audio thread (`RYGT_AUDIO_FTZ`) | off | R16 run | |
+| 2026-11-24 | shadGT | 9f99af6b | Round 16b PRT-AUDIOFAULT: exceptions on the audio thread + process page faults in PRT-AUDIOLOAD (`RYGT_AUDIO_FAULT_LOG`, log only) | GT7 on | R16b run | |
+| 2026-11-24 | RyGT | see log | Round 16b PRT-AUDIOCORE: audio thread gets the last P-core alone, rest of the game kept off it (`RYGT_AUDIO_CORE`) | off | R16b run | |

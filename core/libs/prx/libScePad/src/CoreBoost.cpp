@@ -4,12 +4,18 @@
 // performance cores, turns power throttling off for them and the process, and raises Job#0 a step.
 // Other threads stay free to use every core. RYGT_PCORES=0 turns it off; non-hybrid CPUs are left
 // alone.
+// PRT-AUDIOCORE (pr-tests, Round 16b, RYGT_AUDIO_CORE=1, default off): R15 had GT7's audio mixer
+// (SceSndzAudioOutMain) at 80-98% of a core while it shared the P-cores with the renderer threads,
+// so it may run next to a busy hyperthread sibling. With the switch the last P-core goes to it
+// alone: the audio thread is pinned to one logical CPU of that core at highest priority, and the
+// other busy threads plus every other game thread are kept off both logical CPUs of the core.
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
 #include <thread>
 #include <unordered_set>
+#include <vector>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -56,6 +62,30 @@ bool IsBusy(const wchar_t* name) {
     return false;
 }
 
+// The logical CPUs of the last physical core inside `mask` (0 when there is none).
+std::uint64_t LastCoreIn(std::uint64_t mask) {
+    DWORD length = 0;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &length);
+    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || length == 0) return 0;
+    std::vector<unsigned char> buffer(length);
+    if (!GetLogicalProcessorInformationEx(RelationProcessorCore,
+            reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buffer.data()), &length)) return 0;
+    std::uint64_t last = 0;
+    for (DWORD offset = 0; offset + 8 <= length;) {
+        const auto* entry = reinterpret_cast<const SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buffer.data() + offset);
+        if (entry->Size == 0 || offset + entry->Size > length) break;
+        if (entry->Relationship == RelationProcessorCore && entry->Processor.GroupCount >= 1 &&
+            entry->Processor.GroupMask[0].Group == 0) {
+            const auto core = static_cast<std::uint64_t>(entry->Processor.GroupMask[0].Mask);
+            if (core != 0 && (core & mask) == core && core > last) last = core;
+        }
+        offset += entry->Size;
+    }
+    return last;
+}
+
+std::uint64_t LowestBit(std::uint64_t mask) { return mask & (~mask + 1); }
+
 void Watch(std::uint64_t mask) {
     const HMODULE kernel = GetModuleHandleA("kernel32.dll");
     const auto describe = reinterpret_cast<GetThreadDescriptionFn>(GetProcAddress(kernel, "GetThreadDescription"));
@@ -68,6 +98,27 @@ void Watch(std::uint64_t mask) {
 
     const DWORD process = GetCurrentProcessId();
     std::unordered_set<DWORD> done;
+
+    // PRT-AUDIOCORE (Round 16b).
+    std::uint64_t audio_core = 0;
+    std::uint64_t audio_cpu = 0;
+    std::uint64_t busy_mask = mask;
+    std::uint64_t all = CpuTopology::Get().process;
+    if (const char* env = std::getenv("RYGT_AUDIO_CORE"); env != nullptr && env[0] == '1') {
+        audio_core = LastCoreIn(mask);
+        if (audio_core != 0 && (mask & ~audio_core) != 0) {
+            audio_cpu = LowestBit(audio_core);
+            busy_mask = mask & ~audio_core;
+        } else {
+            audio_core = 0;
+        }
+        std::fprintf(stderr, "[pcores] PRT-AUDIOCORE: %s (audio core 0x%llx, audio CPU 0x%llx, other busy threads 0x%llx)\n",
+            audio_core != 0 ? "on" : "no spare P-core, off", static_cast<unsigned long long>(audio_core),
+            static_cast<unsigned long long>(audio_cpu), static_cast<unsigned long long>(busy_mask));
+        std::fflush(stderr);
+    }
+    if (all == 0) all = mask | CpuTopology::Get().efficient;
+    std::unordered_set<DWORD> moved;
     for (;;) {
         const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
         if (snapshot != INVALID_HANDLE_VALUE) {
@@ -82,13 +133,30 @@ void Watch(std::uint64_t mask) {
                 if (SUCCEEDED(describe(thread, &name)) && name != nullptr) {
                     if (IsBusy(name)) {
                         done.insert(entry.th32ThreadID);
-                        const bool pinned = SetThreadAffinityMask(thread, static_cast<DWORD_PTR>(mask)) != 0;
+                        const bool audio = audio_core != 0 && std::wcscmp(name, L"SceSndzAudioOutMain") == 0;
+                        const std::uint64_t target = audio ? audio_cpu : busy_mask;
+                        const bool pinned = SetThreadAffinityMask(thread, static_cast<DWORD_PTR>(target)) != 0;
                         if (set_thread != nullptr)
                             set_thread(thread, ThreadPowerThrottlingClass, &full_speed, sizeof(full_speed));
                         if (std::wcscmp(name, L"Job#0") == 0) SetThreadPriority(thread, THREAD_PRIORITY_ABOVE_NORMAL);
-                        std::fprintf(stderr, "[pcores] %ls (tid %lu) -> P-cores 0x%llx%s\n", name, entry.th32ThreadID,
-                            static_cast<unsigned long long>(mask), pinned ? "" : " (not pinned)");
+                        if (audio) SetThreadPriority(thread, THREAD_PRIORITY_HIGHEST);
+                        std::fprintf(stderr, "[pcores] %ls (tid %lu) -> %s 0x%llx%s\n", name, entry.th32ThreadID,
+                            audio ? "own audio core, CPU" : "P-cores", static_cast<unsigned long long>(target),
+                            pinned ? "" : " (not pinned)");
                         std::fflush(stderr);
+                    } else if (audio_core != 0 && moved.count(entry.th32ThreadID) == 0) {
+                        // PRT-AUDIOCORE: keep the rest of the game off the audio core; a thread the game
+                        // pinned elsewhere keeps its own cores, one pinned only there stays as it was.
+                        moved.insert(entry.th32ThreadID);
+                        const DWORD_PTR before = SetThreadAffinityMask(thread, static_cast<DWORD_PTR>(all & ~audio_core));
+                        if (before != 0) {
+                            const std::uint64_t kept = static_cast<std::uint64_t>(before) & ~audio_core;
+                            if (kept == 0) {
+                                SetThreadAffinityMask(thread, before);
+                            } else if (kept != (all & ~audio_core)) {
+                                SetThreadAffinityMask(thread, static_cast<DWORD_PTR>(kept));
+                            }
+                        }
                     }
                     LocalFree(name);
                 }
