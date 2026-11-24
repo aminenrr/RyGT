@@ -246,6 +246,9 @@ for a picture compare. Send stdout.log, stderr.log, setup.log.
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
 pread error 5 / errno 9 on savedata; read-write alias throws (quiet, watch).
+First Scapes photo of a session can be black (R17, 2026-11-24): photo draw waits, but a 1600x1800 draw
+(0x102fe00000) in the same frame is skipped by FIX-GT7-131 and read empty later; suspect the FIX-GT7-102
+one-off frame budget. Fix idea: photo window ignores that budget.
 Deferred: .meta compression of the shader store, VMA defrag, PRELOADEVICT.
 Upstream picks not taken: FIX-SGT-116, FEAT-SGT-118 (#108, parked), FIX-SGT-119, review fix 88d1d70c (conflicts); #99 HDR (dropped);
 FIX-SGT-124, PERF-SGT-126 (AMD only); FIX-GTS-528/529 (GT Sport).
@@ -376,4 +379,4 @@ Not ported: rygt7 10d6502 "Verbose logs" toggle, c47d3b4 HD UI and all DLSS / HD
 | 2026-11-24 | shadGT | deb8f310 | Round 16 PRT-AUDIOFTZ: set FTZ+DAZ on the audio thread (`RYGT_AUDIO_FTZ`) | off | R16 run | |
 | 2026-11-24 | shadGT | 9f99af6b | Round 16b PRT-AUDIOFAULT: exceptions on the audio thread + process page faults in PRT-AUDIOLOAD (`RYGT_AUDIO_FAULT_LOG`, log only) | GT7 on | R16b run | 0 exceptions |
 | 2026-11-24 | RyGT | see log | Round 16b PRT-AUDIOCORE: audio thread gets the last P-core alone, rest of the game kept off it (`RYGT_AUDIO_CORE`) | off | R16b run 3 | no gain, stays off |
-| 2026-11-24 | shadGT | ba225657 | Round 17 PRT-AUDIOFTZ on by default in GT7 (`RYGT_AUDIO_FTZ`, 0 = off): denormal fix for race audio crackle | GT7 on | R16b run 2: audio 15-18%, underruns 0 | R17 run |
+| 2026-11-24 | shadGT | ba225657 | Round 17 PRT-AUDIOFTZ on by default in GT7 (`RYGT_AUDIO_FTZ`, 0 = off): denormal fix for race audio crackle | GT7 on | R16b run 2: audio 15-18%, underruns 0 | PASS 2026-11-24: FTZ held, audio max 20%, no crackle, no crash |
