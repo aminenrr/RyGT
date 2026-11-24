@@ -228,6 +228,20 @@ for a picture compare. Send stdout.log, stderr.log, setup.log.
 - Test: run 1 defaults + RYGT_AUDIO_DIAG=1 (MXCSR + fault counts). Run 2 RYGT_AUDIO_FTZ=1 only if FTZ/DAZ off.
   Run 3 RYGT_AUDIO_CORE=1 (+ FTZ if it helped): audio thread %, kernel %, underruns vs R15 (4032), crackle.
 
+## Round 17 (owner GO 2026-11-24 19:18 GMT, shadGT ba225657)
+- R16b test (2026-11-24, CI 45433216904): run 1 defaults: audio thread MXCSR 0x1fa0 then 0x1fb2 (FTZ off,
+  DAZ off, denormal + underflow flags set), climbs 0% to 91% of a core, crackle from about 17:12,
+  actUnder 1429 in 666 s, PRT-AUDIOFAULT 0 exceptions. Run 2 RYGT_AUDIO_FTZ=1: set once, held (0x9fe0/
+  0x9ff0), audio 15-18% of a core, actUnder 0 and underF 0 in 876 s, owner: best run, no crackle, one tiny
+  hitch. Run 3 + RYGT_AUDIO_CORE=1: no gain (17-20%, kernel ~0, stalls 5 in 448 s max 35 ms vs run 2
+  3 in 876 s max 25 ms, same ~48.8 fps). Root cause of race audio crackle: denormals, guest audio thread
+  runs without Orbis MXCSR 0x9fc0.
+- PRT-AUDIOFTZ (`RYGT_AUDIO_FTZ`) now on by default in GT7 (0 = off); still needs PRT-AUDIOLOAD on.
+  PRT-AUDIOCORE stays off.
+- Test: defaults only (no audio env lines): PRT-AUDIOLOAD shows "PRT-AUDIOFTZ set FTZ+DAZ 1 times",
+  audio thread under 20%, actUnder 0, no crackle.
+- Idea, not done: give every guest thread Orbis MXCSR 0x9fc0 at creation (broader fix, other game threads).
+
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
@@ -254,6 +268,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 - R15 2026-11-24: REDZONESKIP (off) for the audio mix loop. R14 test: no felt hitches (photo then race too), race VRAM 7.0-7.2 GB after a photo with no hitches (trim not needed); crackle = audio_diag underruns while the mixer thread is at 80-99%.
 - R16 2026-11-24: AUDIOMXCSR log, AUDIOFTZ (off). R15 test: red-zone skip works but no audio gain (thread still 80-98%).
 - R16b 2026-11-24: AUDIOFAULT log, AUDIOCORE (off). R16 CI cancelled before test.
+- R17 2026-11-24: AUDIOFTZ on in GT7. R16b test: denormals were the audio crackle (80-92% to 15-18%, underruns 0); AUDIOCORE no gain.
 
 ## Fix log (one row per change; test column = owner result)
 | date | repo | commit | what (switches) | default | CI | test |
@@ -359,5 +374,6 @@ Not ported: rygt7 10d6502 "Verbose logs" toggle, c47d3b4 HD UI and all DLSS / HD
 | 2026-11-24 | shadGT | 22667bc3 | Round 15 PRT-REDZONESKIP: no red-zone trampolines in GT7 audio mix loop (`RYGT_AUDIO_MIX_REDZONE_SKIP`) | off | R15 run | works, no audio gain; keep off |
 | 2026-11-24 | shadGT | deb8f310 | Round 16 PRT-AUDIOMXCSR: audio thread MXCSR in PRT-AUDIOLOAD (`RYGT_AUDIO_MXCSR_LOG`, log only) | GT7 on | R16 run | |
 | 2026-11-24 | shadGT | deb8f310 | Round 16 PRT-AUDIOFTZ: set FTZ+DAZ on the audio thread (`RYGT_AUDIO_FTZ`) | off | R16 run | |
-| 2026-11-24 | shadGT | 9f99af6b | Round 16b PRT-AUDIOFAULT: exceptions on the audio thread + process page faults in PRT-AUDIOLOAD (`RYGT_AUDIO_FAULT_LOG`, log only) | GT7 on | R16b run | |
-| 2026-11-24 | RyGT | see log | Round 16b PRT-AUDIOCORE: audio thread gets the last P-core alone, rest of the game kept off it (`RYGT_AUDIO_CORE`) | off | R16b run | |
+| 2026-11-24 | shadGT | 9f99af6b | Round 16b PRT-AUDIOFAULT: exceptions on the audio thread + process page faults in PRT-AUDIOLOAD (`RYGT_AUDIO_FAULT_LOG`, log only) | GT7 on | R16b run | 0 exceptions |
+| 2026-11-24 | RyGT | see log | Round 16b PRT-AUDIOCORE: audio thread gets the last P-core alone, rest of the game kept off it (`RYGT_AUDIO_CORE`) | off | R16b run 3 | no gain, stays off |
+| 2026-11-24 | shadGT | ba225657 | Round 17 PRT-AUDIOFTZ on by default in GT7 (`RYGT_AUDIO_FTZ`, 0 = off): denormal fix for race audio crackle | GT7 on | R16b run 2: audio 15-18%, underruns 0 | R17 run |
