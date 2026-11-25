@@ -381,6 +381,39 @@ Expect: no "old single file .segN deleted" line (one "old single file ...vkpipel
 first start is fine), PRT-DRVMIGRATE "dropped once" for seg0/seg1, PRT-DRVSEAL / sealed lines during the rebuild,
 PRT-DRVHIT high on the 2nd start, PRT-VRAMHEAD lines and VRAM staying under 6342 MB in races, PRT-DRVMEM race lines.
 
+## Round 19 test results (owner 2026-11-25 13:40-14:11 GMT, logs work/logs/r19-1, r19-1b, r19-2 in the Hark project)
+- Run 1 (defaults): launcher pass dropped seg0 (41.2% hits) and seg1 (41.1%), under 50%. Cleanup fix OK (no .segN deleted).
+  HANG at splash 20,623/27,055 (13:41:13): PRT-DRVSEAL saved and sealed seg3 (729 MB, read 381 ms, written 950 ms) while 34
+  prewarm creates were still using its cache; none returned in 184 s (DIAG-049), CPU and GPU idle, commit 20 GB. seg2 seal
+  at 804 MB earlier had no creates stuck. Owner killed it; index kept 20987 pipelines.
+- Run 1 retry with RYGT_DRIVER_CACHE_SEAL_EARLY=0: no hang, owner: no frame stutter. SPLASHVERIFY rebuilt 6125 not in the
+  index. DRVHIT 9.4% (mostly new builds). Race private RAM 18.1-19.1 GB, flat. VRAMHEAD failed this run: VRAM 6.7-7.4 GB,
+  over budget at every check, up to 656 textures / 567 MB made again in 10 s (thrash).
+- Run 2 (same bat): cache PASS: seg2 804, seg3 729, seg4 611 sealed, seg5 open, index 27673, 0 rebuilt at the splash,
+  2152 MB given to the driver (+2953 MB private), exit private 11.6 GB. DRVHIT 29.4% (segments 27-32%) but miss time small
+  (seg2 misses 79 ms total); 318 moved after a miss. Owner: some stutter on the first lap = readback DeferFenceSignal waits,
+  not compiles: race start 14:03:51-55 (529, 481, 174 ms, 100+ small waits a frame), 14:05:50-14:06:01 (143-174 ms, single
+  waits up to ~100 ms). VRAM 5.8-6.3 GB, over budget only briefly at 14:03:56 (peak 6631 MB). 67 HITCHLOG lines, ~13 in race.
+- Plain <cache>.vkpipelinecache (7 MB) is written again every run and deleted at every start (writer unknown, likely the
+  launcher pass save path).
+
+## Round 20 plan (owner GO 2026-11-25 14:22 GMT: full R20 in one build)
+1. PRT-DRVSEAL drain fix: new creates switch to the fresh open segment first; wait until in-flight creates on the old
+   segment reach 0 (count per segment), then read, save, seal. 30 s timeout: skip and retry later. Log drain time.
+   Then RYGT_DRIVER_CACHE_SEAL_EARLY stays on in GT7 (owner drops it from his bat).
+2. Stop the plain .vkpipelinecache being written when DRVSEG is on (find the writer).
+3. PRT-VRAMHEAD reload backoff: a texture let go and made again within 10 s is kept for the rest of the race; when reloads
+   pass 30% of MB let go in 10 s, eviction rate halves, back to normal after 30 s quiet. Line adds "kept after reload".
+4. Readback waits: (a) PRT-RBWAIT diag: per readback site and size, count and wait per 10 s in races, top 5.
+   (b) RYGT_READBACK_BATCH: readbacks of one frame wait on one fence at the end of the batch instead of one wait each.
+   Default: ask the owner (off unless he OKs on).
+5. Keep DRVHIT and DRVMEM lines as they are.
+6. Track-based segments (PRT-DRVTRACK): new pipelines tagged by the track loaded when first built (course path seen by
+   the RyGT file layer); each track gets its own open/sealed segments that age out together through DRVSTALE (5 counted
+   sessions). Menu, shared and car content stay in the common segments (car shaders are mostly shared). Index records the
+   track id per segment.
+Test: defaults (no bat). Start, race several laps, exit; start again, race (another track too), exit. Send both stdout.log.
+
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
