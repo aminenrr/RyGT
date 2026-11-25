@@ -251,16 +251,17 @@ std::int64_t ReadIntoGuest(void* buffer, std::size_t bytes, const std::function<
     return retried;
 }
 
-// PRT-DRVTRACK (pr-tests, Round 20, RYGT_DRIVER_CACHE_TRACK, on; 0 = off): each guest file the
-// game opens for reading goes to the renderer (RytyGpuNoteGuestFile in libSceVideoOut.prx), which
-// takes the track being loaded from a course path and gives that track's new pipelines their own
-// driver cache segments. A renderer without the export is left alone.
+// PRT-DRVTRACK (pr-tests, Round 20, RYGT_DRIVER_CACHE_TRACK; Round 21: default off, 1 = on): each
+// guest file the game opens for reading goes to the renderer (RytyGpuNoteGuestFile in
+// libSceVideoOut.prx), which takes the track being loaded from a course path and gives that
+// track's new pipelines their own driver cache segments. A renderer without the export is left
+// alone. Round 20 test: GT7 reads its tracks through gt.idx volumes, no course path ever came.
 static void NoteGuestFileForRenderer(const char* path) {
 #ifdef _WIN32
     using NoteFunction = void (*)(const char*);
     static const bool off = [] {
         const char* value = std::getenv("RYGT_DRIVER_CACHE_TRACK");
-        return value && value[0] == '0';
+        return !(value && *value && value[0] != '0');
     }();
     static std::atomic<NoteFunction> note{nullptr};
     static std::atomic<unsigned> lookups{0};
