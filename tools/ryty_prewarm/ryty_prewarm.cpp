@@ -1082,6 +1082,33 @@ int main(int argc, char** argv) {
     const std::uint32_t hwThreads = std::max(1u, std::thread::hardware_concurrency());
     const std::uint32_t metaWarmThreads = std::clamp(maxThreads > 0 ? maxThreads : hwThreads, 2u, 8u);
 
+    // PRT-DRVPLAIN (pr-tests, Round 20, RYGT_DRIVER_CACHE_PLAIN_SKIP, on; 0 = off): with the GT7
+    // driver cache in segments (the renderer's <cache>.segindex beside the plain file, and
+    // RYGT_DRIVER_CACHE_SEGMENTS not 0, shards not asked for), the game never reads the plain
+    // <cache>.vkpipelinecache and deletes it at every start; this tool wrote it again before every
+    // Play (7 MB, Round 19). Its compute recipes warm in the game instead (PERF-GT7-037); only the
+    // OS cache warm of the shader store runs here.
+    {
+        const char* skipEnv = std::getenv("RYGT_DRIVER_CACHE_PLAIN_SKIP");
+        const char* segmentsEnv = std::getenv("RYGT_DRIVER_CACHE_SEGMENTS");
+        const char* shardsEnv = std::getenv("RYGT_DRIVER_CACHE_SHARDS");
+        const bool skipOn = !(skipEnv && skipEnv[0] == '0');
+        const bool segmentsOn = !(segmentsEnv && segmentsEnv[0] == '0') &&
+                                !(shardsEnv && *shardsEnv && std::strtoul(shardsEnv, nullptr, 10) >= 2);
+        fs::path segIndex = cachePath;
+        segIndex += ".segindex";
+        std::error_code segError;
+        if (skipOn && segmentsOn && fs::is_regular_file(segIndex, segError)) {
+            emitLine("INFO|PRT-DRVPLAIN: driver cache in segments (" + segIndex.filename().string() +
+                     "); the plain .vkpipelinecache is not written, compute recipes warm in the game");
+            if (warmMeta && !metaNames.empty() && !g_cancel.load()) {
+                warmMetaFilesToOsCache(directSetsDir, metaNames, metaWarmThreads);
+            }
+            emitLine("DONE|segments|compiled=0|skipped=0|failed=0");
+            return g_cancel.load() ? 3 : 0;
+        }
+    }
+
     std::vector<std::size_t> pendingIndices;
     std::uint32_t alreadyCached = 0;
     for (std::size_t i = 0; i < recipes.size(); ++i) {

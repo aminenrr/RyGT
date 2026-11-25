@@ -251,6 +251,36 @@ std::int64_t ReadIntoGuest(void* buffer, std::size_t bytes, const std::function<
     return retried;
 }
 
+// PRT-DRVTRACK (pr-tests, Round 20, RYGT_DRIVER_CACHE_TRACK, on; 0 = off): each guest file the
+// game opens for reading goes to the renderer (RytyGpuNoteGuestFile in libSceVideoOut.prx), which
+// takes the track being loaded from a course path and gives that track's new pipelines their own
+// driver cache segments. A renderer without the export is left alone.
+static void NoteGuestFileForRenderer(const char* path) {
+#ifdef _WIN32
+    using NoteFunction = void (*)(const char*);
+    static const bool off = [] {
+        const char* value = std::getenv("RYGT_DRIVER_CACHE_TRACK");
+        return value && value[0] == '0';
+    }();
+    static std::atomic<NoteFunction> note{nullptr};
+    static std::atomic<unsigned> lookups{0};
+    if (off || path == nullptr) return;
+    NoteFunction function = note.load(std::memory_order_acquire);
+    if (function == nullptr) {
+        // The renderer loads after the first opens: looked up again every 64 opens until found.
+        if ((lookups.fetch_add(1, std::memory_order_relaxed) & 63u) != 0) return;
+        if (HMODULE renderer = GetModuleHandleA("libSceVideoOut.prx")) {
+            function = reinterpret_cast<NoteFunction>(reinterpret_cast<void*>(GetProcAddress(renderer, "RytyGpuNoteGuestFile")));
+        }
+        if (function == nullptr) return;
+        note.store(function, std::memory_order_release);
+    }
+    function(path);
+#else
+    (void)path;
+#endif
+}
+
 static int SceErrorFromErrno(int error) {
     constexpr int GuestEio = 5;
     const int guest = error > 0 && error <= 34 ? error : GuestEio;
@@ -302,6 +332,9 @@ int APS5_VABI sceKernelOpen(const char* path, int flags, std::uint16_t mode) {
     }
     if (fd < 0) {
         return SceErrorFromErrno(errno);
+    }
+    if ((flags & SCE_KERNEL_O_ACCMODE) == SCE_KERNEL_O_RDONLY) {
+        NoteGuestFileForRenderer(path); // PRT-DRVTRACK (Round 20)
     }
     return fd;
 }
