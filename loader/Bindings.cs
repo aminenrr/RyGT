@@ -90,8 +90,9 @@ namespace RyGT
         /// What each PS4 control is on the controller (one input) and on the keyboard (up to two keys).
         public readonly Dictionary<string, string> Pad = new Dictionary<string, string>();
         public readonly Dictionary<string, List<string>> Key = new Dictionary<string, List<string>>();
-        /// Deadzones, 1 (almost none) to 127: the sticks' and the triggers'.
+        /// Deadzones, 1 (almost none) to 127: the sticks' and the triggers' inner and outer bounds.
         public int LeftDeadzone = 5, RightDeadzone = 5, L2Deadzone = 1, R2Deadzone = 1;
+        public int LeftOuter = 127, RightOuter = 127, L2Outer = 127, R2Outer = 127;
 
         readonly string root;
         readonly string path;
@@ -272,6 +273,7 @@ namespace RyGT
             Key.Clear();
             LeftDeadzone = RightDeadzone = 5;
             L2Deadzone = R2Deadzone = 1;
+            LeftOuter = RightOuter = L2Outer = R2Outer = 127;
             if (lines == null)
             {
                 foreach (var row in Rows)
@@ -289,14 +291,24 @@ namespace RyGT
                 if (output == "analog_deadzone")
                 {
                     var parts = input.Split(',');
+                    string dev = parts[0].Trim();
                     int value;
-                    if (parts.Length >= 2 && int.TryParse(parts[1], out value))
+                    if (parts.Length >= 2 && int.TryParse(parts[1].Trim(), out value))
                     {
-                        value = Math.Max(1, Math.Min(127, value));
-                        if (parts[0] == "leftjoystick") LeftDeadzone = value;
-                        if (parts[0] == "rightjoystick") RightDeadzone = value;
-                        if (parts[0] == "l2") L2Deadzone = value;
-                        if (parts[0] == "r2") R2Deadzone = value;
+                        value = Math.Max(1, Math.Min(126, value));
+                        if (dev == "leftjoystick") LeftDeadzone = value;
+                        if (dev == "rightjoystick") RightDeadzone = value;
+                        if (dev == "l2") L2Deadzone = value;
+                        if (dev == "r2") R2Deadzone = value;
+                    }
+                    int outer;
+                    if (parts.Length >= 3 && int.TryParse(parts[2].Trim(), out outer))
+                    {
+                        outer = Math.Max(2, Math.Min(127, outer));
+                        if (dev == "leftjoystick") LeftOuter = Math.Max(LeftDeadzone + 1, outer);
+                        if (dev == "rightjoystick") RightOuter = Math.Max(RightDeadzone + 1, outer);
+                        if (dev == "l2") L2Outer = Math.Max(L2Deadzone + 1, outer);
+                        if (dev == "r2") R2Outer = Math.Max(R2Deadzone + 1, outer);
                     }
                     continue;
                 }
@@ -339,15 +351,19 @@ namespace RyGT
                 if (!row.KeyboardOnly && Pad.TryGetValue(row.Output, out pad)) text.AppendLine(row.Output + " = " + pad);
             }
             text.AppendLine();
-            text.AppendLine("# Range of deadzones: 1 (almost none) to 127 (max), for players 1-2");
+            text.AppendLine("# Range of deadzones: 1 (almost none) to 127 (max), for players 1-4");
+            int lIn = Math.Max(1, Math.Min(126, LeftDeadzone)), lOut = Math.Max(lIn + 1, Math.Min(127, LeftOuter));
+            int rIn = Math.Max(1, Math.Min(126, RightDeadzone)), rOut = Math.Max(rIn + 1, Math.Min(127, RightOuter));
+            int l2In = Math.Max(1, Math.Min(126, L2Deadzone)), l2Out = Math.Max(l2In + 1, Math.Min(127, L2Outer));
+            int r2In = Math.Max(1, Math.Min(126, R2Deadzone)), r2Out = Math.Max(r2In + 1, Math.Min(127, R2Outer));
             for (int p = 1; p <= 4; ++p)
             {
                 string target = p > 1 ? ":" + p : "";
-                text.AppendLine("analog_deadzone" + target + " = leftjoystick, " + LeftDeadzone + ", 127");
-                text.AppendLine("analog_deadzone" + target + " = rightjoystick, " + RightDeadzone + ", 127");
-                // The triggers' only when changed (shadGT's default is 1).
-                if (L2Deadzone > 1) text.AppendLine("analog_deadzone" + target + " = l2, " + L2Deadzone + ", 127");
-                if (R2Deadzone > 1) text.AppendLine("analog_deadzone" + target + " = r2, " + R2Deadzone + ", 127");
+                text.AppendLine("analog_deadzone" + target + " = leftjoystick, " + lIn + ", " + lOut);
+                text.AppendLine("analog_deadzone" + target + " = rightjoystick, " + rIn + ", " + rOut);
+                // The triggers' only when changed (shadGT's default is 1, 127).
+                if (l2In > 1 || l2Out < 127) text.AppendLine("analog_deadzone" + target + " = l2, " + l2In + ", " + l2Out);
+                if (r2In > 1 || r2Out < 127) text.AppendLine("analog_deadzone" + target + " = r2, " + r2In + ", " + r2Out);
             }
             if (File.Exists(path))
             {

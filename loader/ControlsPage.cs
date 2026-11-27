@@ -1079,13 +1079,79 @@ namespace RyGT
             // Controller: the sticks' and triggers' deadzones, what the game reads, trigger feedback, ports.
             padExtras = Column(column);
             padExtras.Controls.Add(new Heading("Sticks"));
-            padExtras.Controls.Add(new SettingRow("Left deadzone", DeadzoneSlider(() => bindings.LeftDeadzone, v => bindings.LeftDeadzone = v)));
-            padExtras.Controls.Add(new SettingRow("Right deadzone", DeadzoneSlider(() => bindings.RightDeadzone, v => bindings.RightDeadzone = v)));
+            Slider leftIn = null, leftOut = null, rightIn = null, rightOut = null;
+            Slider l2In = null, l2Out = null, r2In = null, r2Out = null;
+            leftIn = DeadzoneSlider(() => bindings.LeftDeadzone, v =>
+            {
+                bindings.LeftDeadzone = Math.Min(126, v);
+                if (bindings.LeftOuter <= bindings.LeftDeadzone)
+                {
+                    bindings.LeftOuter = bindings.LeftDeadzone + 1;
+                    if (leftOut != null) leftOut.Value = (int)Math.Round(bindings.LeftOuter * 100 / 127.0);
+                }
+            });
+            leftOut = OuterDeadzoneSlider(() => bindings.LeftOuter, v =>
+            {
+                bindings.LeftOuter = Math.Max(bindings.LeftDeadzone + 1, v);
+                if (leftOut != null && v < bindings.LeftDeadzone + 1)
+                    leftOut.Value = (int)Math.Ceiling(bindings.LeftOuter * 100 / 127.0);
+            });
+            rightIn = DeadzoneSlider(() => bindings.RightDeadzone, v =>
+            {
+                bindings.RightDeadzone = Math.Min(126, v);
+                if (bindings.RightOuter <= bindings.RightDeadzone)
+                {
+                    bindings.RightOuter = bindings.RightDeadzone + 1;
+                    if (rightOut != null) rightOut.Value = (int)Math.Round(bindings.RightOuter * 100 / 127.0);
+                }
+            });
+            rightOut = OuterDeadzoneSlider(() => bindings.RightOuter, v =>
+            {
+                bindings.RightOuter = Math.Max(bindings.RightDeadzone + 1, v);
+                if (rightOut != null && v < bindings.RightDeadzone + 1)
+                    rightOut.Value = (int)Math.Ceiling(bindings.RightOuter * 100 / 127.0);
+            });
+            padExtras.Controls.Add(new SettingRow("Left deadzone", leftIn));
+            padExtras.Controls.Add(new SettingRow("Left outer", leftOut));
+            padExtras.Controls.Add(new SettingRow("Right deadzone", rightIn));
+            padExtras.Controls.Add(new SettingRow("Right outer", rightOut));
             padExtras.Controls.Add(new Heading("Triggers", "Game reads"));
             padExtras.Controls.Add(l2Meter = new TriggerMeter("L2"));
-            padExtras.Controls.Add(new SettingRow("L2 deadzone", DeadzoneSlider(() => bindings.L2Deadzone, v => bindings.L2Deadzone = v)));
+            l2In = DeadzoneSlider(() => bindings.L2Deadzone, v =>
+            {
+                bindings.L2Deadzone = Math.Min(126, v);
+                if (bindings.L2Outer <= bindings.L2Deadzone)
+                {
+                    bindings.L2Outer = bindings.L2Deadzone + 1;
+                    if (l2Out != null) l2Out.Value = (int)Math.Round(bindings.L2Outer * 100 / 127.0);
+                }
+            });
+            l2Out = OuterDeadzoneSlider(() => bindings.L2Outer, v =>
+            {
+                bindings.L2Outer = Math.Max(bindings.L2Deadzone + 1, v);
+                if (l2Out != null && v < bindings.L2Deadzone + 1)
+                    l2Out.Value = (int)Math.Ceiling(bindings.L2Outer * 100 / 127.0);
+            });
+            padExtras.Controls.Add(new SettingRow("L2 deadzone", l2In));
+            padExtras.Controls.Add(new SettingRow("L2 outer", l2Out));
             padExtras.Controls.Add(r2Meter = new TriggerMeter("R2"));
-            padExtras.Controls.Add(new SettingRow("R2 deadzone", DeadzoneSlider(() => bindings.R2Deadzone, v => bindings.R2Deadzone = v)));
+            r2In = DeadzoneSlider(() => bindings.R2Deadzone, v =>
+            {
+                bindings.R2Deadzone = Math.Min(126, v);
+                if (bindings.R2Outer <= bindings.R2Deadzone)
+                {
+                    bindings.R2Outer = bindings.R2Deadzone + 1;
+                    if (r2Out != null) r2Out.Value = (int)Math.Round(bindings.R2Outer * 100 / 127.0);
+                }
+            });
+            r2Out = OuterDeadzoneSlider(() => bindings.R2Outer, v =>
+            {
+                bindings.R2Outer = Math.Max(bindings.R2Deadzone + 1, v);
+                if (r2Out != null && v < bindings.R2Deadzone + 1)
+                    r2Out.Value = (int)Math.Ceiling(bindings.R2Outer * 100 / 127.0);
+            });
+            padExtras.Controls.Add(new SettingRow("R2 deadzone", r2In));
+            padExtras.Controls.Add(new SettingRow("R2 outer", r2Out));
             var strength = new Slider { Minimum = 0, Maximum = 200, SmallChange = 5, LargeChange = 25, Size = new Size(150, 28), Suffix = "%", AccessibleName = "Trigger feedback strength" };
             strength.Value = Math.Max(0, Math.Min(200, readInt("Input", "trigger_strength", 100)));
             strength.ValueChanged += delegate { Try(() => write("Input", "trigger_strength", strength.Value)); };
@@ -1186,6 +1252,15 @@ namespace RyGT
             var slider = new Slider { Minimum = 0, Maximum = 100, SmallChange = 1, LargeChange = 10, Size = new Size(150, 28), Suffix = "%" };
             slider.Value = (int)Math.Round(get() * 100 / 127.0);
             slider.ValueChanged += delegate { set(Math.Max(1, (int)Math.Round(slider.Value * 127 / 100.0))); SaveBindings(); };
+            return slider;
+        }
+
+        /// An outer deadzone (2-127, 100% = full range) as a 2-100% slider.
+        Slider OuterDeadzoneSlider(Func<int> get, Action<int> set)
+        {
+            var slider = new Slider { Minimum = 2, Maximum = 100, SmallChange = 1, LargeChange = 10, Size = new Size(150, 28), Suffix = "%" };
+            slider.Value = Math.Max(2, Math.Min(100, (int)Math.Round(get() * 100 / 127.0)));
+            slider.ValueChanged += delegate { set(Math.Max(2, Math.Min(127, (int)Math.Round(slider.Value * 127 / 100.0)))); SaveBindings(); };
             return slider;
         }
 
@@ -1618,11 +1693,12 @@ namespace RyGT
             lock (wheel.Gate) return wheel.Live(row) / 1000f;
         }
 
-        /// What the game reads from a trigger: its input past the deadzone, 0 to 1.
-        static float AfterDeadzone(float raw, int deadzone)
+        /// What the game reads from a trigger: its input past the inner deadzone, reaching 1 at outer.
+        static float AfterDeadzone(float raw, int inner, int outer)
         {
             float v = raw * 127;
-            return v <= deadzone ? 0 : Math.Min(1, (v - deadzone) / (127 - deadzone));
+            if (v <= inner || outer <= inner) return 0;
+            return Math.Min(1, (v - inner) / (outer - inner));
         }
 
         void Tick()
@@ -1662,8 +1738,8 @@ namespace RyGT
             pad.RightStick = new PointF(Input(bindings.PadOf("axis_right_x")), Input(bindings.PadOf("axis_right_y")));
             if (Tab == 1) pad.LeftStick = pad.RightStick = PointF.Empty;
             pad.Invalidate();
-            l2Meter.Value = AfterDeadzone(Input(bindings.PadOf("l2")), bindings.L2Deadzone);
-            r2Meter.Value = AfterDeadzone(Input(bindings.PadOf("r2")), bindings.R2Deadzone);
+            l2Meter.Value = AfterDeadzone(Input(bindings.PadOf("l2")), bindings.L2Deadzone, bindings.L2Outer);
+            r2Meter.Value = AfterDeadzone(Input(bindings.PadOf("r2")), bindings.R2Deadzone, bindings.R2Outer);
 
             if (listening == Listen.Pad) StepListen(now);
         }

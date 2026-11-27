@@ -90,6 +90,7 @@ namespace RyGT
 
         readonly string path;
         readonly NumericUpDown leftDeadzone, rightDeadzone;
+        int leftOuter = 127, rightOuter = 127;
         readonly ComboBox keyboardPlayer;
         readonly Action<int> saveKeyboardPlayer;
 
@@ -250,12 +251,20 @@ namespace RyGT
                     if (output == "analog_deadzone")
                     {
                         var parts = input.Split(',');
+                        string dev = parts[0].Trim();
                         int value;
-                        if (parts.Length >= 2 && int.TryParse(parts[1], out value))
+                        if (parts.Length >= 2 && int.TryParse(parts[1].Trim(), out value))
                         {
-                            value = Math.Max(1, Math.Min(127, value));
-                            if (parts[0] == "leftjoystick") leftDeadzone.Value = value;
-                            if (parts[0] == "rightjoystick") rightDeadzone.Value = value;
+                            value = Math.Max(1, Math.Min(126, value));
+                            if (dev == "leftjoystick") leftDeadzone.Value = value;
+                            if (dev == "rightjoystick") rightDeadzone.Value = value;
+                        }
+                        int outer;
+                        if (parts.Length >= 3 && int.TryParse(parts[2].Trim(), out outer))
+                        {
+                            outer = Math.Max(2, Math.Min(127, outer));
+                            if (dev == "leftjoystick") leftOuter = outer;
+                            if (dev == "rightjoystick") rightOuter = outer;
                         }
                         continue;
                     }
@@ -308,11 +317,13 @@ namespace RyGT
             }
             text.AppendLine();
             text.AppendLine("# Range of deadzones: 1 (almost none) to 127 (max), for players 1-2");
+            int lOut = Math.Max((int)leftDeadzone.Value + 1, Math.Min(127, leftOuter));
+            int rOut = Math.Max((int)rightDeadzone.Value + 1, Math.Min(127, rightOuter));
             for (int p = 1; p <= 4; ++p)
             {
                 string target = p > 1 ? ":" + p : "";
-                text.AppendLine("analog_deadzone" + target + " = leftjoystick, " + leftDeadzone.Value + ", 127");
-                text.AppendLine("analog_deadzone" + target + " = rightjoystick, " + rightDeadzone.Value + ", 127");
+                text.AppendLine("analog_deadzone" + target + " = leftjoystick, " + leftDeadzone.Value + ", " + lOut);
+                text.AppendLine("analog_deadzone" + target + " = rightjoystick, " + rightDeadzone.Value + ", " + rOut);
             }
             if (File.Exists(path))
             {
