@@ -661,6 +661,23 @@ Local builds set up in `E:\Projects\RyGT` (~1 min incremental ThinLTO+PGO). All 
 - Test race Run 2 (23:29:18-23:36:12): 52.0 fps avg (13.49 ms GPU), 16 hitches / 1042 ms (max 121 ms), VRAM 5679-5941 MB (lowest yet, 7-8% VMA frag). Race start still loaded 814 cached pipelines (~15 ms avg) because `FIX-SGT-192` trims past 2048 kept pipelines.
 - Disk size note: `CUSA24769-pipelines-...` is 5.89 GB (235k uncompressed chunk files); R25 candidate: zstd chunk compression (new + existing chunks) and warm race-start keep/width tuning.
 
+## Round 25 (owner GO 2026-11-26, local build shadGT 43ec9d33, all ON by default in GT7)
+1. PRT-CACHEZSTD (`RYGT_PIPELINE_CACHE_ZSTD`, GT7 on): links `libzstd_static`; compresses new `FIX-SGT-192` chunks with zstd level 3 (shrink-only) and auto-detects zstd magic `0xFD2FB528` on read. Existing 155,082 chunks compressed in place (`6.27 GB -> 5.27 GB`, saved 1.00 GB; 66% of NVIDIA chunks are already high-entropy/compressed internally).
+2. PRT-KEEP (`RYGT_PRECOMPILE_KEEP`, GT7 default `8192`, was `2048`): raises splash precompile in-memory keep cap (respects `SHADGT_PRECOMPILE_KEEP` when set).
+3. PRT-CACHEFAST (`RYGT_PIPELINE_CACHE_FAST`, GT7 on): raises `FIX-SGT-192` `chunk::Memo::Limit` from 16 MB to 64 MB and skips redundant `vkGetPipelineCacheData` serialization when an existing `.vkpc` file builds in `< 8 ms`.
+
+## Round 25 test results (owner 2026-11-27, defaults, logs `round 25\failed run` and `round 25\run 1`)
+- Failed run: NVIDIA GPU Device Lost (`DIAG-243` / `DIAG-206: instruction pointer`) at `00:26:36` during a heavy cold-compile burst on a brand-new track/car (19 fragment shaders 748-1355 ms each); all 3,287 compiled pipelines saved to disk before the hang.
+- Run 1 (re-ran the cold race + photo + test race `00:41:28-00:48:25`): **0 crashes, 0 stderr errors, 0 `PRT-RBSTALL`, 0 broken textures**.
+- Test race Run 1: **53.8 fps avg** (min 31.6, max 59.8; R24 Run 2 was 52.0 fps), **10 hitches / 601 ms total** (max 87 ms; R24 Run 2 was 16 hitches / 1042 ms, -42% hitch time), VRAM 5781-6139 MB (avg 5901 MB, under budget even after a photo), exit RAM **10.9 GB private / 9.5 GB WS** (exit save 3 ms).
+- `PRT-CACHEFAST`: **8,714 fast-hits** (`0` unchanged, `0` missed, `0` refused, `0` write failed) + 1,065 driver hits + 6,221 written.
+- Findings for R26: `PRT-HDRKEEP` grew to 375.1 MB on temporary race/photo `B10G11R11` buffers (`480x540`, `400x450`); `CUSA24769-direct-sets/` `.meta` files (0.91 GiB) compress 3.15x with zstd3; `ChunkFlushCheck` (`SHADGT_FEED_GPU_MIN=32`) submits ~16.8 times/frame while GPU is 83% busy.
+
+## Round 26 (owner GO 2026-11-27, local build shadGT 84a467fe, deployed to `RYGT7\libs\`, awaiting Run 1 test)
+1. PRT-METAZSTD (`RYGT_META_ZSTD`, GT7 on): compresses new shader store `.meta` files with zstd level 3 and auto-decompresses on read. Existing 65,205 `.meta` files compressed in place (`0.91 GiB -> 0.29 GiB`, saved 0.62 GiB, 3.15x).
+2. PRT-HDRKEEP cap (`RYGT_HDR_SKY_KEEP_CAP`, GT7 default 64 MB, `0` = uncapped): caps total VRAM held by `PRT-HDRKEEP` at 64 MB (reclaims ~300 MB VRAM while still keeping the ~28 MB sky/cloud LUTs).
+3. PRT-FEEDTUNE (`RYGT_FEED_GPU_MIN`, GT7 default 64, was 32; `SHADGT_FEED_GPU_MIN` overrides): raises `ChunkFlushCheck` draw threshold from 32 to 64 to cut mid-frame Vulkan submits and CPU/driver overhead.
+
 ## Parked (do not start, remind the owner)
 PS4 Pro 4K softness check (R15-R22 logs and display code verified identical, parked 2026-11-26); Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
@@ -673,7 +690,7 @@ Research (parked, owner 2026-11-24): (1) faster shader compilation (translation 
 when the shader folder is deleted.
 Readback fence hitches (R19 item 6): small 50-100 ms readback waits are real round trip latency; the big ones
 were VRAM paging (R19 PRT-VRAMHEAD). Revisit only if they stay after PRT-VRAMHEAD.
-Deferred: .meta compression of the shader store, PRELOADEVICT.
+Deferred: PRELOADEVICT.
 Upstream picks not taken: FIX-SGT-116, FEAT-SGT-118 (#108, parked), FIX-SGT-119, review fix 88d1d70c (conflicts); #99 HDR (dropped);
 FIX-SGT-124, PERF-SGT-126 (AMD only); FIX-GTS-528/529 (GT Sport).
 Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
@@ -706,6 +723,8 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 - R22 2026-11-26: ports #137 #122 #124 #123 #125 #141, GPUPIC/TEXALIAS, VMAFRAG (empty block trim), FILLTRIM; RBBATCH order, TEXSTALE, TEXREFRESH off; VRAMHEAD v2 dropped.
 - R23 2026-11-26: local builds ready (`E:\Projects\RyGT`); ports #146 FIX-SGT-191, #148 FIX-SGT-194; VRAMREL2 default off; PRT-VMADEFRAG (off), PRT-RBSTALL, PRT-GPUPIC race-end reset. R23 Run 1: 55.1 fps, 3 hitches / 213 ms; cyan map clouds caught by PRT-GPUPIC; 24 GB RAM from 4.07 GB segments.
 - R24 2026-11-26: port #147 FIX-SGT-192 (`RYGT_PIPELINE_CACHE_FILES`), PRT-HDRKEEP, PRT-COMPWIDTH=4, PRT-COMPSTAT. R24 Run 1/2: 0 broken textures, RAM 24 GB -> 11.8 GB, VRAM 5.68-5.94 GB, old 4.07 GB `.seg*` deleted; chunk folder 5.89 GB uncompressed (zstd compression candidate for R25).
+- R25 2026-11-26/27: PRT-CACHEZSTD (existing chunks 6.27 -> 5.27 GB), PRT-KEEP (8192), PRT-CACHEFAST (64 MB memo, <8 ms fast-hit skip). R25 Run 1: 53.8 fps, 10 hitches / 601 ms (-42% vs R24), 8,714 fast-hits (0 missed/refused), exit RAM 10.9 GB, 0 broken textures.
+- R26 2026-11-27: PRT-METAZSTD (existing .meta 0.91 -> 0.29 GiB), PRT-HDRKEEP 64 MB cap, PRT-FEEDTUNE (64). Built and deployed locally; awaiting Run 1 test.
 
 ## Fix log (one row per change; test column = owner result)
 | date | repo | commit | what (switches) | default | CI | test |
@@ -856,3 +875,5 @@ Not ported: rygt7 10d6502 "Verbose logs" toggle, c47d3b4 HD UI and all DLSS / HD
 | 2026-11-26 | shadGT | 20da1c5 | Round 22 defaults: `RYGT_READBACK_BATCH_ORDER`, `RYGT_TEX_STALE_LOG`, `RYGT_TEX_REFRESH` off (1 = on) | off | ci pending | R22: race 2 54.9 fps, 8 hitches |
 | 2026-11-26 | shadGT | 20d6e91b | Round 23 port #146 FIX-SGT-191 (`RYGT_PERFRAME_WRITE_CUT`) + #148 FIX-SGT-194 (`RYGT_FAULT_XSTATE_REPAIR`); `RYGT_VRAM_OVER_RELEASE2` default off; PRT-VMADEFRAG (`RYGT_VMA_DEFRAG`, off); PRT-RBSTALL (`RYGT_RB_STALL_LOG`, 200 ms); PRT-GPUPIC race-end budget reset | GT7 on / both on / off / off / 200 | local build | R23 Run 1: 55.1 fps, 3 hitches / 213 ms, VRAM 6.0 GB; cyan map clouds caught by PRT-GPUPIC |
 | 2026-11-26 | shadGT | 61fe5285 | Round 24 port #147 FIX-SGT-192 (`RYGT_PIPELINE_CACHE_FILES`); PRT-HDRKEEP (`RYGT_HDR_SKY_KEEP`); PRT-COMPWIDTH (`RYGT_COMPILE_HEAVY_WIDTH`, 4 on 12+ threads); PRT-COMPSTAT (`RYGT_COMPILE_TIMING_LOG`) | GT7 on / on / 4 / on | local build | R24 Run 1/2: 0 broken textures, RAM 24 -> 11.8 GB, VRAM 5.68-5.94 GB, 0 cache misses; 16 small hitches at warm race start |
+| 2026-11-27 | shadGT | 43ec9d33 | Round 25 PRT-CACHEZSTD (`RYGT_PIPELINE_CACHE_ZSTD`, zstd3 chunks); PRT-KEEP (`RYGT_PRECOMPILE_KEEP`, 8192); PRT-CACHEFAST (`RYGT_PIPELINE_CACHE_FAST`, 64 MB memo + <8 ms fast-hit skip) | GT7 on / 8192 / on | local build (not pushed) | R25 Run 1: 53.8 fps, 10 hitches / 601 ms (-42% vs R24), 8714 fast-hits, exit RAM 10.9 GB, chunks 6.27 -> 5.27 GB |
+| 2026-11-27 | shadGT | 84a467fe | Round 26 PRT-METAZSTD (`RYGT_META_ZSTD`, zstd3 .meta); PRT-HDRKEEP cap (`RYGT_HDR_SKY_KEEP_CAP`, 64 MB); PRT-FEEDTUNE (`RYGT_FEED_GPU_MIN`, 64) | GT7 on / 64 / 64 | local build (not pushed) | deployed, awaiting Run 1 |
