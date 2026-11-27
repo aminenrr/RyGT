@@ -1094,7 +1094,7 @@ namespace RyGT
             {
                 bindings.LeftOuter = Math.Max(bindings.LeftDeadzone + 1, v);
                 if (leftOut != null && v < bindings.LeftDeadzone + 1)
-                    leftOut.Value = (int)Math.Ceiling(bindings.LeftOuter * 100 / 127.0);
+                    leftOut.Value = (int)Math.Round(bindings.LeftOuter * 100 / 127.0);
             });
             rightIn = DeadzoneSlider(() => bindings.RightDeadzone, v =>
             {
@@ -1109,7 +1109,7 @@ namespace RyGT
             {
                 bindings.RightOuter = Math.Max(bindings.RightDeadzone + 1, v);
                 if (rightOut != null && v < bindings.RightDeadzone + 1)
-                    rightOut.Value = (int)Math.Ceiling(bindings.RightOuter * 100 / 127.0);
+                    rightOut.Value = (int)Math.Round(bindings.RightOuter * 100 / 127.0);
             });
             padExtras.Controls.Add(new SettingRow("Left deadzone", leftIn));
             padExtras.Controls.Add(new SettingRow("Left outer", leftOut));
@@ -1130,7 +1130,7 @@ namespace RyGT
             {
                 bindings.L2Outer = Math.Max(bindings.L2Deadzone + 1, v);
                 if (l2Out != null && v < bindings.L2Deadzone + 1)
-                    l2Out.Value = (int)Math.Ceiling(bindings.L2Outer * 100 / 127.0);
+                    l2Out.Value = (int)Math.Round(bindings.L2Outer * 100 / 127.0);
             });
             padExtras.Controls.Add(new SettingRow("L2 deadzone", l2In));
             padExtras.Controls.Add(new SettingRow("L2 outer", l2Out));
@@ -1148,7 +1148,7 @@ namespace RyGT
             {
                 bindings.R2Outer = Math.Max(bindings.R2Deadzone + 1, v);
                 if (r2Out != null && v < bindings.R2Deadzone + 1)
-                    r2Out.Value = (int)Math.Ceiling(bindings.R2Outer * 100 / 127.0);
+                    r2Out.Value = (int)Math.Round(bindings.R2Outer * 100 / 127.0);
             });
             padExtras.Controls.Add(new SettingRow("R2 deadzone", r2In));
             padExtras.Controls.Add(new SettingRow("R2 outer", r2Out));

@@ -223,9 +223,15 @@ namespace RyGT
             return true;
         }
 
-        static bool IsManaged(string output)
+        static bool IsManaged(string output, string input)
         {
-            return Rows.Any(r => r.Output == output) || output == "analog_deadzone";
+            if (Rows.Any(r => r.Output == output)) return true;
+            if (output == "analog_deadzone")
+            {
+                var dev = input.Split(',')[0].Trim();
+                return dev == "leftjoystick" || dev == "rightjoystick";
+            }
+            return false;
         }
 
         void LoadBindings(string[] lines)
@@ -331,7 +337,7 @@ namespace RyGT
                 foreach (var line in File.ReadAllLines(path))
                 {
                     string output, input;
-                    if (Parse(line, out output, out input) && !IsManaged(output)) kept.Add(line.Trim());
+                    if (Parse(line, out output, out input) && !IsManaged(output, input)) kept.Add(line.Trim());
                 }
                 if (kept.Count > 0)
                 {
