@@ -1,7 +1,19 @@
 # AGENTS.fork.md (aminenrr/RyGT, branch pr-tests)
 
-Working notes for any agent on the owner's fork test branch. Rewritten clean 2026-11-23 after Round 10.
-Read in order: Owner, Rules, Where things stand, Next round. The Fix log is the full record.
+Working notes for any agent on the owner's fork test branch.
+Rewritten clean 2026-11-28 after Round 34-B, ready for the Round 35 GitHub Release.
+
+Read in this order:
+1. Owner & Rules (who this is for, what never to touch)
+2. Current Status (where the fork stands today, 2026-11-28)
+3. Switch Reference (every GT7-tuning switch touched since Round 28, with its default)
+4. Round History (one line per round, in a table)
+5. Known Risks and Parked (things not to re-propose)
+6. Round Log (the full prose record, oldest first) and Fix Log (one row per code change)
+
+The Round Log and Fix Log are the append-only detailed record: new rounds are added at the end,
+nothing above is rewritten. Everything above section 6 is a summary view generated from them.
+
 
 ## Owner
 - Amine (GitHub aminenrr). Tests GT7 CUSA24769 on Windows: Alienware m15 R7, RTX 3070 Ti laptop 8 GB
@@ -49,24 +61,253 @@ Read in order: Owner, Rules, Where things stand, Next round. The Fix log is the 
   head (no pin to edit). Windows job up to 180 min. If red: fix only the first compile error, push once.
 - Do not run clang-format on whole shadGT files.
 
-## Known risks
-- SHADGT_PREWARM / PERF-038 must stay off on GT7 (device lost on RTX 4070).
-- Driver cache (R18): segments of about 600 MB, max 4 (2.4 GB) by default; driver keeps loaded files in RAM
-  (FIX-SGT-010: 2.96 GB file -> 15 GiB resident). PRT-DRVHIT + PRT-DRVMEM now measure hits and RAM per file.
-- VRAM budget 6342 MB on an 8 GB laptop; races sit at 7.0 to 7.4 GB. R18: hitches of 250-500 ms come from
-  WDDM paging at VRAM >= ~6300 MB (GPU 88-135 ms a frame); R19 PRT-VRAMHEAD keeps 512 MB of headroom.
 
-## Where things stand (after Round 10 test, 2026-11-23)
-Last build: shadGT 6d202135, RyGT 47cfc6e, CI run 45229829369. Later RyGT commits are docs only ([skip ci]).
-| Area | State |
-|---|---|
-| Shaders | Splash hold + launcher prewarm + sharded driver cache work; warm starts compile nothing. New shaders only on new content. |
-| Photos | FIXED in R10 (PRT-PHOTOWIN + PHOTOWAIT mode 2 + PHOTOWB): Scapes from launch and replay after many shots. |
-| FPS after photos | FIXED in R10 (VRAMIDLE backoff): no more single digits. |
-| Hitches | Better (stalls 33 in R9 -> 13 in R10, none in DropRegionsOver). Shorter hitches remain at the same track spots every lap (owner Trial Mountain 19:40, 19:41). Under the 500 ms stall log, so not caught. |
-| VRAM | Race 7.0 to 7.4 GB of 6342. VMA blocks 6.4 to 6.8 GB with 1.5 to 1.7 GB free inside; regions 1.24 GB; unknown 1.3 GB = GPU-only non-region 625 MB + upload ReBAR 391 MB (kept copies about 240 MB) + reserve 256 MB + 252 MB unnamed; outside VMA 584 MB. |
-| Cockpit view | 5 to 10 fps lower than other views. In races GPU busy 80 to 88%, GpuRecorder/VkCommands/Binder 60 to 82% each (one core = 100%). |
-| Settings | 5.1 audio and display calibration stick. Opening Movie does not (parked). |
+## Current Status (as of Round 34-B, 2026-11-28)
+
+**Repo state:** shadGT branch pr-tests at `e06f38cf` (Round 34-B). RyGT at `77d936f` (Round 29;
+no RyGT-side code change since, only this doc). Local builds only since Round 23 (E:\Projects\RyGT);
+nothing has been pushed to GitHub since Round 21. **Round 35 is the first push since then.**
+
+**Performance, start/finish straight, heavy load (about 2800 draws / 64 lists a frame):**
+
+| | List-open (CPU, recorder) | GPU ms in lists | Heavy FPS | Overall FPS |
+|---|---|---|---|---|
+| Round 31 baseline | 18.71 ms | 13.50 ms | 45.40 | 54.00 |
+| Round 32 (+R32-A bind batch) | 17.39 ms | 13.38 ms | 47.30 | 54.66 |
+| Round 33-A (promoted + 3 more switches) | 16.67 ms | 13.48 ms | 47.57 | 54.93 |
+| Round 34-B (RYGT_BARRIER_STAMP_CHECK=1) | 16.42 ms | 13.64 ms | 49.90 | 54.97 |
+
+Total CPU-side gain R31 to R34-B: about 2.3 ms off the heavy-straight recorder time, with VRAM,
+hitch, and crash counts unchanged (clean) at every step. GPU time has stayed flat near 13.5 ms; the
+remaining ceiling to a locked 60 FPS is CPU time in GpuRecorder (confirmed the sole bottleneck in
+Round 34-A's Diagnostics run: Binder and VkCommands were spin-waiting, not blocking it).
+
+**RYGT_PREPARE_NON_TESS (both versions): ruled out, keep OFF.**
+- v1 (Round 31): read buffers bound host memory instead of a VRAM mirror, costing +4 ms GPU time.
+- v2 (Round 34-B, mirror-binding fix): the GPU-time regression is gone when mirrors already exist, but
+  running with PREPARE on still triggers the pre-existing Round 31 read-side region-growth bug (a guest
+  buffer read that reaches past its region's current bounds rebuilds the whole region, doubling repeatedly).
+  Round 34-B's run 2-B log shows this exact chain 16 times, growing one region from 345 MB to 1012 MB,
+  with VRAM spiking to 8930 MB transient (almost 2.6 GB over the 6342 MB budget) and 36 hitches of
+  100 ms or more. (The handoff that reported this round said "32x rebuilds, up to 345 MB, peak 7096 MB";
+  the actual log says 16x, up to 1012 MB, peak 8930 MB. Corrected here: always re-read the raw log, the
+  rebuild counter line names the running total, not the peak, and the final VRAMHEAD "peak" field lags
+  the real transient peak seen in PRT-PERF/PRT-RBSTALL.)
+- The region-growth bug itself (guest-buf-read site in GuestBuffer, vk_rasterizer_native.cpp) is
+  not fixed and not caused by PREPARE: it is in the ordinary recorder path and was first seen in
+  Round 27/31 without PREPARE active. PREPARE's different read timing just triggers it more often. It
+  is still open; see Known Risks.
+
+**Switches promoted to default ON in GT7 since Round 30:** RYGT_BIND_FAST, RYGT_BIND_REGION_ONCE,
+RYGT_SKIP_EMPTY_SET_UPKEEP, RYGT_EMPTY_IMAGE_QUEUES, RYGT_SKIP_DEPENDENT_COPY, RYGT_SINGLE_DIRECT_TABLE,
+RYGT_LITERAL_SAMPLERS (Round 33-A), RYGT_GROUP_VERTEX_SHARPS, RYGT_STACK_GAP_MEMO, RYGT_DEPTH_TWIN_HINT,
+RYGT_NOTE_WRITES_STAMP (Round 34-A). All audited line by line before promotion; no bug found in any of
+them (one small gap closed: 4 call sites that bypassed the NOTE_WRITES_STAMP dedupe, fixed in Round 34-A).
+
+**Audited and recommended to promote next (Round 35): RYGT_BARRIER_STAMP_CHECK.** Clean win across
+every workload (-0.25 ms, -10 points of CPU on GpuRecorder/Binder/VkCommands, 0 crashes). It needs
+RYGT_NOTE_WRITES_STAMP on (already default). See the Switch Reference table.
+
+**Crash history:** every device-lost crash seen across Rounds 8, 25, 26, 30, 31, and 32 run 3 shares
+one signature: a GPU wave that never finishes, the guest job thread pinned near 100% of a core for
+several seconds first, then DIAG-243/DIAG-206. It has happened both with and without
+RYGT_PREPARE_NON_TESS, so that switch is not the cause. RYGT_GPU_CHECKPOINTS cannot currently catch it:
+the extension and its only marker are compiled out of Release builds (#ifndef NDEBUG), and the one
+marker that exists is on texture uploads, not draws. Not reproduced since Round 33-A; still open, see
+Known Risks.
+
+**Minimal-logging audit for Round 35:** see "Round 35 Logging Audit" below.
+
+
+## Switch Reference (GT7 tuning switches touched since Round 28)
+
+Full list and descriptions live in shadGT/src/video_core/rygt_switches.cpp (one line per switch,
+`RYGTSW1|NAME|kind|group|default|values|description`); the launcher's Advanced page reads it directly.
+This table covers the ones this fork has been actively tuning; older switches (Rounds 1-27) are
+unchanged from when they were introduced (see the Round Log) unless listed here.
+
+| Switch | Default in GT7 | What it does | Since |
+|---|---|---|---|
+| RYGT_BIND_FAST | on (=0 off) | Skips RefreshSources on textures with nothing new to refresh; faster texture T# hashing. | R30, promoted R33-A |
+| RYGT_BIND_REGION_ONCE | on (=0 off) | Caches one RegionOver lookup per buffer per draw instead of several. | R30, promoted R33-A |
+| RYGT_SKIP_EMPTY_SET_UPKEEP | on (=0 off) | Skips a mutex lock in descriptor-set upkeep when nothing changed. | R32-A, promoted R33-A |
+| RYGT_EMPTY_IMAGE_QUEUES | on (=0 off) | Skips a mutex lock in image prepare when no uploads/inits are queued. | R32-A, promoted R33-A |
+| RYGT_SKIP_DEPENDENT_COPY | on (=0 off) | Skips an unused temporary-vector copy of a target's dependents. | R32-A, promoted R33-A |
+| RYGT_SINGLE_DIRECT_TABLE | on (=0 off) | Reuses one thread-local scratch buffer for the D3 direct-read table. | R32-A, promoted R33-A |
+| RYGT_LITERAL_SAMPLERS | on (=0 off) | Copies literal sampler words directly instead of a lookup. | R32-A, promoted R33-A |
+| RYGT_BIND_REPEAT_LOG | off (=1 on) | Diagnostic only; measures consecutive-draw binding reuse (ruled out as a lever). | R30; default flipped off R33-A |
+| RYGT_GROUP_VERTEX_SHARPS | on (=0 off) | Reads consecutive same-page vertex V# descriptors in one copy. | Upstream PR #155-213, ported + promoted R33/R34-A |
+| RYGT_STACK_GAP_MEMO | on (=0 off) | Caches CPU-stack-free address gaps per thread (blocking fallback on a busy lock). | Upstream PR #155-228, ported + promoted R33/R34-A |
+| RYGT_DEPTH_TWIN_HINT | on (=0 off) | Skips the depth/colour partner lookup unless a same-size opposite-kind image was seen at that address. Fixed for the Alsace FIX-212 shadow-band hazard (tracks every image creation, not only render targets). | Upstream PR #155-216, ported fixed + promoted R33/R34-A |
+| RYGT_NOTE_WRITES_STAMP | on (=0 off) | Per-stream epoch stamps replace linear scans when recording what a draw wrote/read/attached. | R33-A, promoted R34-A |
+| RYGT_BARRIER_STAMP_CHECK | off (=1 on) -- recommended ON for R35 | Uses the stamps above for O(1) barrier-need checks (NeedsBarrierFor, targets_in) instead of linear scans. Needs RYGT_NOTE_WRITES_STAMP on. | R34-B |
+| RYGT_PREPARE_NON_TESS | off (=1 on) -- keep off | Bypasses a tessellation-pipeline-build guard for non-tessellated draws; v2 (R34-B) adds mirror-binding for prepared reads. Definitively ruled out (region-growth bug trigger, VRAM over budget, hitches). | R31; v2 R34-B |
+| RYGT_SPLASH_WARM_TOP | 6144 | How many most-used launcher-built pipelines stay warm for race start. | R29 (4096) -> R32 (6144) |
+| SHADGT_NATIVE_FENCE_BATCH_MS | 2 (code default); the owner's ini overrides to 0.5, a net win since R27 | Interval over which native-mode fence submissions are batched. | R27 finding; recommend promoting the GT7 default to 0.5 for R35 so no ini override is needed |
+| RYGT_BINDFAST2_LOG | off (=1 on) | Diagnostic 10 s counters for the R32-A/R33-A switches above (no hot-path cost when off: Round 33-A moved the counters to thread-local, only touched when this is on). | R33 |
+
+
+## Round History (one line per round; full detail in the Round Log and Fix Log)
+
+| Round | Date | Build(s) | Summary |
+|---|---|---|---|
+| R3 | 2026-11-21 | shadGT (pr-tests) | Port of Round 1/2, store compression, prewarm. STORECLEAN deleted a live store (fixed R4). |
+| R4 | 2026-11-21/22 | - | Driver cache keep, SRT walker, AF 16x, Pro downscale + RCAS, photo writeback, stall log. |
+| R5 | 2026-11-22 | - | Diagnostics (SYSPARAM, VRAMREG, STALLCAUSE). 5.1 audio confirmed working. |
+| R6 | 2026-11-22 | - | Sharded driver cache, splash hold, VRAMREL2, RCAS slider. 30+ min without single-digit fps. |
+| R7 | 2026-11-22 | - | VRAMTRIM, quiet logs, LONGWAIT. Big hitches smaller (1.0-1.5 s -> 0.6-0.8 s). |
+| R8 | 2026-11-23 | - | Upstream picks, STALLSAMPLE, VRAMIDLE. |
+| R9 | 2026-11-23 | - | GPU checkpoints in Release, stall symbols. Photo black again, VRAM fill on photos. |
+| R10 | 2026-11-23 | - | DROPFAST, PHOTOWIN, REGIONCAP (off), VRAMREG3, STAGESHRINK, VRAMIDLE backoff. Photos and post-photo fps fixed. |
+| R11 | 2026-11-23 | fe7fd8e | Diag round: HITCHLOG, TESSWAIT, VIEWCHURN, VMAFREE, PASSTIME, FENCESITE, SUBMITS; STAGESHRINK v2. Once-per-lap hitch; crash after photos (PDI stack overflow). |
+| R12 | 2026-11-23 | 41530e7 | FENCEBATCH (off), LEASEASYNC (off), HITCHLOG v2, PHOTOCRASH diag, SHADOWLOG diag. |
+| R13 | 2026-11-24 | 529ceebe | PHOTOFIX (STAGESHRINK v2 off), LEASEASYNC on, AUDIOLOAD diag. Audio thread 95-99% of a core. |
+| R14 | 2026-11-24 | acdc0c0b | FENCEBATCH on, AUDIOLOOP diag. No felt hitches; crackle traced to the mixer thread saturating. |
+| R15 | 2026-11-24 | 22667bc3 | REDZONESKIP (off): no audio gain, thread still 80-98%. |
+| R16 | 2026-11-24 | deb8f310 | AUDIOMXCSR log, AUDIOFTZ (off). |
+| R16b | 2026-11-24 | 9f99af6b | AUDIOFAULT log, AUDIOCORE (off). |
+| R17 | 2026-11-24 | ba225657 | AUDIOFTZ on: root cause of audio crackle = denormals, Orbis MXCSR never set on the guest audio thread. Fixed, PASS. |
+| R18 | 2026-11-24 | 1b282401 | Driver cache rebuilt as segments + index (DRVHIT, DRVSEG, DRVSTALE, SPLASHVERIFY, DRVMIGRATE, DRVMEM, DRVSAFE, DRVSAVE). Open-segment delete bug found. |
+| R19 | 2026-11-25 | 61aa7159 | Segment cleanup fix, SPLASHVERIFY strict, migrate 50%, DRVMOVE, DRVSEAL, race DRVMEM, VRAMHEAD (512 MB). Splash hang from the early seal (R19 run 1). |
+| R20 | 2026-11-25 | 05d3390e | DRVSEAL drain, DRVPLAIN, VRAMHEAD reload backoff, RBWAIT, RBBATCH (on), DRVTRACK. Segments PASS; RBWAIT/RBBATCH never ran; DRVTRACK found no course paths. |
+| R21 | 2026-11-25 | 9ca471dd | TEXSTALE, TEXREFRESH, PROTECTFAIL, DRVSTALE v2, RBWAIT v2, RBBATCH v2. Map-texture-break bug traced to a GPU-made picture, not a stale guest texture. |
+| R22 | 2026-11-26 | 20da1c5 | 6 upstream ports (#122-141), GPUPIC/TEXALIAS, VMAFRAG, FILLTRIM. |
+| R23 | 2026-11-26 | 20d6e91b | Local builds start (E:\Projects\RyGT). 2 upstream ports, VRAMREL2 off, VMADEFRAG (off), RBSTALL, GPUPIC race-end reset. 55.1 fps, 3 hitches. |
+| R24 | 2026-11-26 | 61fe5285 | Pipeline-cache-files port, HDRKEEP, COMPWIDTH, COMPSTAT. RAM 24 -> 11.8 GB, VRAM 5.68-5.94 GB, 0 broken textures. |
+| R25 | 2026-11-26/27 | 43ec9d33 | CACHEZSTD, KEEP (8192), CACHEFAST. 53.8 fps, hitches -42% vs R24, chunks 6.27 -> 5.27 GB. |
+| R26 | 2026-11-27 | 84a467fe | METAZSTD, HDRKEEP cap (64 MB), FEEDTUNE (64, unhelpful). Run 2 with fence batch 0.5 ms: 55.09 fps, 0 crashes. |
+| R27 | 2026-11-27 | 12ef7372 | Revert FEEDTUNE to 32, IDLEFLUSH (off), SPLASHWARM (off, cap 2048), HITCHLOG v3. Switches-on run: builds -83%, 0 crashes. |
+| R28 | 2026-11-27 | 90b57453+ | SPLASHWARM default on, IDLEFLUSH skip default on, REGIONGROWDOWN (off), FEEDPASS (off; "& 15" gate bug found), RACEBUILD log, PRT-MARK. Launcher: DualSense outer deadzone. |
+| R29 | 2026-11-27 | d93931c8 | FEEDPASS v2 gate fix, async NoteUse, SPLASHWARM 4096. Diagnostics run: GpuRecorder is 97% CPU-bound (first hard evidence). |
+| R30 | 2026-11-27 | a69ccd6c | BIND_FAST (off), BIND_REGION_ONCE (off), BINDREPEAT log. Run 2 (switches on) was smoother but hit the finish-line GPU hang (same signature as R8/R25/R26). |
+| R31 | 2026-11-27 | a3d35241 | PRT-PREPNONTESS v1. Run 2 (on): -18% fps, +4.1 ms GPU from host-memory reads, 15x region rebuild to 1012 MB, lap-1 stutters, finish-line hang again. Keep off. |
+| R32 | 2026-11-27 | 0d9b2742 | R32-A bind-side batch ported from upstream PR #155 (6 commits). Clean run: heavy fps 45.4 -> 47.3, list-open -1.27 ms, 0 crashes, 0 region rebuilds. |
+| R33-A | 2026-11-28 | 69001b18 | Promoted R30+R32-A (7 switches) to default ON; removed hot-path atomics; ported 3 more upstream commits (213/228/216-fixed) + NoteWrites stamp dedupe. |
+| R34-A | 2026-11-28 | cb6f04b2 | Promoted the 4 new R33-A switches; closed a 4-site stamp-dedupe gap; added Diagnostics sub-scopes that found the real cost centers (EncodePhase, BindBuffers, BindTextures). |
+| R34-B | 2026-11-28 | e06f38cf | RYGT_BARRIER_STAMP_CHECK (O(1) barrier checks): clean win, -0.25 ms, -10 CPU points. RYGT_PREPARE_NON_TESS v2 (mirror-binding): GPU regression fixed, but still triggers the region-growth bug; definitively ruled out. |
+| R35 | 2026-11-28 | (pending) | Release & cleanup round: promote RYGT_BARRIER_STAMP_CHECK, minimal-logging audit, ini cleanup, this doc rewrite, first GitHub push since R21. |
+
+
+## Known Risks
+
+- SHADGT_PREWARM / PERF-038 must stay off on GT7 (device lost on RTX 4070).
+- Driver cache: segments of about 600 MB, max 4 (2.4 GB) by default; the driver keeps loaded files in
+  RAM (FIX-SGT-010: a 2.96 GB file held 15 GiB resident before the Round 18 segment rework). PRT-DRVHIT
+  and PRT-DRVMEM measure hits and RAM per file.
+- VRAM budget 6342 MB on an 8 GB laptop. Hitches of 250-500 ms come from WDDM paging once VRAM sits at
+  or above the budget for a while (GPU 88-135 ms a frame instead of 16). PRT-VRAMHEAD keeps 512 MB of
+  headroom by default; it does not evict imported host-memory views, only VRAM-resident textures.
+- **Guest-buffer region-growth-on-read (open, found R27/R31, confirmed R34-B).** A read in the ordinary
+  recorder path (GuestBuffer, site "guest-buf-read") that reaches past an existing region's bounds
+  rebuilds the whole region, copying the old contents in. If this happens repeatedly on the same region
+  (seen with RYGT_PREPARE_NON_TESS on, both v1 and v2, though the bug itself is not in PREPARE's code),
+  the region can double in size many times in a few seconds (345 MB to 1012 MB in 16 steps, R34-B
+  run 2-B), pushing VRAM nearly 2.6 GB over budget and causing multi-hundred-ms stalls. Not fixed.
+  RYGT_REGION_GROW_DOWN (off) only pads the low end of a grow, it does not stop the repeated rebuild.
+  A future round should add a per-region rebuild-count/size log at the MakeRegion call site itself
+  (not just the existing PRT-REGIONGROW line, which already names address/size/caller/program hash but
+  has no owner yet to fix it) and find what guest buffer keeps growing.
+- **Finish-line / race-end GPU hang (open, seen R8, R25, R26, R30, R31, R32 run 3).** One signature every
+  time: a guest job thread pins near 100% of a core for several seconds, GPU busy reads 100% with 0
+  submits, then DIAG-243 (device lost) and DIAG-206 (a GPU wave that never finished, sometimes with a
+  faulting address, sometimes with none). Not tied to RYGT_PREPARE_NON_TESS (happened both with and
+  without it) or to any single switch tested so far. RYGT_GPU_CHECKPOINTS as it exists today cannot
+  catch it: both the checkpoint extension and its only Record() call site are compiled out of Release
+  builds (#ifndef NDEBUG in vk_instance.cpp and image_registry.cpp), and that one call site marks
+  texture uploads, not draws. A future round should: (1) remove the #ifndef NDEBUG gate around enabling
+  the extension, (2) add a Record() call per draw/dispatch encode with the pixel/compute shader hash
+  and frame/draw index, so a reproduction names the stuck shader.
+- Cockpit view runs 5 to 10 fps lower than other views (unchanged since Round 10; GPU busy 80-88%,
+  GpuRecorder/VkCommands/Binder 60-82% each in races).
+- 5.1 audio and display calibration settings do not stick (Opening Movie reset is parked, see below).
+
+
+## Parked (do not start, remind the owner)
+
+PS4 Pro 4K softness check (R15-R22 logs and display code verified identical, parked 2026-11-26); Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
+SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
+pread error 5 / errno 9 on savedata; read-write alias throws (quiet, watch).
+First Scapes photo of a session can be black (R17, 2026-11-24): photo draw waits, but a 1600x1800 draw
+(0x102fe00000) in the same frame is skipped by FIX-GT7-131 and read empty later; suspect the FIX-GT7-102
+one-off frame budget. Fix idea: photo window ignores that budget.
+Research (parked, owner 2026-11-24): (1) faster shader compilation (translation + driver pipeline build time);
+(2) a shader manifest stored next to the game save, used by the launcher prewarm to rebuild the shader cache
+when the shader folder is deleted.
+Readback fence hitches (R19 item 6): small 50-100 ms readback waits are real round trip latency; the big ones
+were VRAM paging (R19 PRT-VRAMHEAD). Revisit only if they stay after PRT-VRAMHEAD.
+Deferred: PRELOADEVICT.
+Upstream picks not taken: FIX-SGT-116, FEAT-SGT-118 (#108, parked), FIX-SGT-119, review fix 88d1d70c (conflicts); #99 HDR (dropped);
+FIX-SGT-124, PERF-SGT-126 (AMD only); FIX-GTS-528/529 (GT Sport).
+Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
+
+
+**Housekeeping found during the Round 35 audit (2026-11-28), not parked, do before pushing:**
+- The current `CUSA24769.RyGT.ini` lists `RYGT_PREPARE_NON_TESS=1` twice: once under `env=1` (enabled)
+  and once under `env=0` (disabled). PREPARE is ruled out for good (see Current Status); remove the
+  `env=1` line and keep only `env=0`, or remove both and rely on the GT7 default (already off).
+- `env=1|SHADGT_NATIVE_FENCE_BATCH_MS=0.5` and the owner's `variable runner.bat` both still override a
+  value that should become the GT7 default (see Switch Reference) so neither override is needed after
+  Round 35.
+
+
+## Round 35 Logging Audit (2026-11-28)
+
+A clean Release race (`round 34\run 1-B`, 7 minutes) wrote 1,982 lines at Warning level, 1,286 of them
+`PRT-*`, from about 25 independently-switched loggers. All of them are already individually opt-in
+(every one has its own `RYGT_*`/`SHADGT_*` switch), but almost all default **on** in GT7: this is
+what makes a normal Release log this busy. Checked against the actual code, not just the switch
+description, so this table also answers whether turning a switch off saves real per-frame/background
+work, or only the final print:
+
+| Logger | Switch | Recommend for R35 | Why |
+|---|---|---|---|
+| PRT-PERF | `RYGT_PERF_LINE` | Keep ON | Also controls whether the dedicated `PrtPerfThread` background thread (1 ms poll of GPU busy%, submits, fence-site totals) even starts. Turning it off removes that thread entirely, not just the print , but it is Low-priority and the one line every 10 s is the single most useful self-diagnostic (GPU-bound vs CPU-bound) a player can paste back. Recommend keeping. |
+| PRT-AUDIOLOAD + its 4 sub-logs (LOOP/MXCSR/FAULT) | `RYGT_AUDIO_LOAD_LOG` (+3 dependents) | Keep ON | Confirmed in code: the actual 10 ms audio-thread sampling only runs while `RYGT_AUDIO_LOAD_LOG` is on and `PrtPerfThread` is running. Turning it off saves that sampling, but it is also the line that proved and watches the Round 17 denormal fix (AUDIOFTZ) is still holding; cheap (fires only while the audio thread is over 80% of a core) and worth keeping for regression watch. |
+| PRT-HITCHLOG | `RYGT_HITCH_LOG` (ms threshold, default 50) | Keep ON, raise threshold if desired | Runs a cheap check every presented frame regardless; the expensive fence-site/tess/import breakdown only gathers above the threshold. Also feeds the clock stamp other lines use. Turning it to `0` removes essentially all of its own per-frame cost. Recommend leaving at 50 (or raising to 100) rather than off: it is the main hitch-cause record. |
+| PRT-FENCESITE, PRT-SUBMITS, PRT-RBWAIT (v1+v2), PRT-TESSWAIT, PRT-VIEWCHURN, PRT-COMPSTAT, PRT-RACEBUILD, PRT-IDLEFLUSH, PRT-FEEDPASS, PRT-VMA_FREE, PRT-DRVHIT | one `*_LOG` switch each, all explicitly tagged "Log only" in `rygt_switches.cpp` | **Flip to default OFF for R35** (`=1` still opts back in) | Each is a pure accounting/print pass with no separate hot-path cost beyond its own tiny counter (confirmed by the "Log only" tag in each switch's own description, cross-checked for `RYGT_READBACK_WAIT_V2`: the per-fence table update is itself gated on the switch, so turning it off also skips that small per-fence lock). This is the bulk of the 10 s line volume (about 12 of the ~18 periodic loggers). |
+| PRT-GPUPIC / PRT-TEXALIAS | `RYGT_GPU_PIC_LOG` | Flip to default OFF for R35 | `PrtGpuPicChecks()` early-returns entirely when off (confirmed in code); the underlying picture eviction it reports on happens regardless (it is core texture-cache bookkeeping), so turning this off only removes the per-frame check-and-maybe-log call, not the eviction itself. Safe to default off. |
+| PRT-VMAFRAG | `RYGT_VMA_FRAG` | **Keep ON (not a pure log switch)** | Confirmed in code: this switch also gates whether `PrtVmaFrag()` actually trims empty VMA blocks every 5 s over budget. Turning it off would also turn off that cleanup, not just the print. Despite living in the "Memory" group (a hint this isn't pure diagnostics), it is easy to mistake for one of the `_LOG` switches above , flagging explicitly so it is not flipped off by accident during the R35 pass. |
+| PRT-DRVMEM, PRT-VRAMHEAD, PRT-VRAMIDLE, PRT-VRAMREG/REG2/REG3, PRT-SHADOWLOG, PRT-PASSTIME | behavior switches (`RYGT_VRAM_HEADROOM_MB`, `RYGT_VRAM_HEAD_BACKOFF`, `RYGT_VRAM_TRIM_IDLE_FRAMES`, `RYGT_VRAM_IDLE_BACKOFF`, `RYGT_PASS_TIME_LOG`, etc.) | **Do not touch for R35** | These switches control real VRAM-management and GPU-timestamp-collection behavior (eviction rates, headroom targets, pass-time collection used elsewhere); the periodic line is secondary to the behavior. Not part of a "logging" cleanup , changing them is a performance change, not a quietness one. |
+| PRT-MARK | `RYGT_MARK_HOTKEY` | Keep ON | Explicitly asked to keep if desired: 2-6 lines a race (race start/end), used throughout this fork's own log analysis to find the window to look at. Negligible volume. |
+| PRT-STALLSAMPLE, PRT-STALLLOG/CAUSE, PRT-PHOTOCRASH | `RYGT_STALL_SAMPLE`, `RYGT_STALL_LOG`/`RYGT_STALL_CAUSE`, `RYGT_PHOTO_CRASH_GUARD` | Keep ON | Rare (a handful of lines a session) and these are exactly the crash/hang diagnosis lines Known Risks says are still needed (the finish-line GPU hang and the photo-mode stack-overflow risk both rely on these firing if they recur). |
+
+**Not fully re-verified this round** (time-boxed; description-only, not re-read against the actual
+call site): `PRT-DRVLOAD`, `PRT-UNBUILDABLE`, `PRT-PREWARM`/`PRT-WARMSKIP`, `PRT-STORECLEAN`,
+`PRT-HDRKEEP`, `PRT-SPLASHWARM`'s own line. All of these are tied to switches that also control real
+shader-compile/driver-cache/memory behavior (not pure logs), so the recommendation is the same as
+PRT-VMAFRAG: leave them as-is rather than guess.
+
+**Net effect of the "flip to OFF" list above:** removes roughly 700-900 of the 1,286 `PRT-*` lines seen
+in a 7-minute race (the dozen pure-log periodic loggers, each about 45-55 lines, plus the two
+per-event ones), leaving PRT-PERF, PRT-AUDIOLOAD family, PRT-HITCHLOG, PRT-MARK, the VRAM/memory
+behavior lines, and the rare crash-diagnosis lines: the ones a player's bug report actually needs.
+
+
+## Round 35 Release Checklist
+
+1. **Promote `RYGT_BARRIER_STAMP_CHECK`** to default ON in GT7 (`rygt_switches.cpp`); keep
+   `RYGT_PREPARE_NON_TESS` default OFF (both versions ruled out, do not remove the switch: it stays
+   useful if the region-growth bug is ever fixed and v2 retried).
+2. **Logging:** flip the "Flip to default OFF for R35" rows in the Logging Audit table above. Leave
+   every switch in the "Keep ON" and "Do not touch" rows exactly as-is.
+3. **Promote `SHADGT_NATIVE_FENCE_BATCH_MS` default to 0.5 in GT7** (code default is currently 2; the
+   owner's ini and `variable runner.bat` both override to 0.5 already, a net win since Round 27). Remove
+   both overrides once the code default changes, so a fresh install needs no custom ini/bat.
+4. **Clean the ini**: `CUSA24769.RyGT.ini` currently lists `RYGT_PREPARE_NON_TESS=1` under both `env=1`
+   and `env=0`. Remove the `env=1` line.
+5. **This file**: already rewritten through Round 34-B as of 2026-11-28. Keep extending the Round Log
+   and Fix Log (not rewriting them) from here on.
+6. **Push order** (per the Rules above): shadGT `pr-tests` first, then RyGT `pr-tests`. Doc-only commits
+   end `[skip ci]`; the head that must build (the switch promotions, logging default flips, ini is not
+   code so no CI impact) should not. After the doc change, copy this file to `aminenrr/rygt7 pr-tests`
+   as a doc commit.
+7. **GitHub Release**: this is the first push since Round 21, so expect a long CI diff across both repos;
+   give the owner the run link only (never poll CI, per the Rules).
+
+
+## Round Log (full prose record, oldest first)
+
+### Rounds 11-30
 
 ## Round 11 test results (owner 2026-11-23 21:52-22:15 local, shadGT fe7fd8e, RyGT 44fab8f)
 Logs: work/logs/r11 in the Hark project (findings.md there).
@@ -673,60 +914,211 @@ Local builds set up in `E:\Projects\RyGT` (~1 min incremental ThinLTO+PGO). All 
 - `PRT-CACHEFAST`: **8,714 fast-hits** (`0` unchanged, `0` missed, `0` refused, `0` write failed) + 1,065 driver hits + 6,221 written.
 - Findings for R26: `PRT-HDRKEEP` grew to 375.1 MB on temporary race/photo `B10G11R11` buffers (`480x540`, `400x450`); `CUSA24769-direct-sets/` `.meta` files (0.91 GiB) compress 3.15x with zstd3; `ChunkFlushCheck` (`SHADGT_FEED_GPU_MIN=32`) submits ~16.8 times/frame while GPU is 83% busy.
 
-## Round 26 (owner GO 2026-11-27, local build shadGT 84a467fe, deployed to `RYGT7\libs\`, awaiting Run 1 test)
+## Round 26 (owner GO 2026-11-27, local build shadGT 84a467fe)
 1. PRT-METAZSTD (`RYGT_META_ZSTD`, GT7 on): compresses new shader store `.meta` files with zstd level 3 and auto-decompresses on read. Existing 65,205 `.meta` files compressed in place (`0.91 GiB -> 0.29 GiB`, saved 0.62 GiB, 3.15x).
 2. PRT-HDRKEEP cap (`RYGT_HDR_SKY_KEEP_CAP`, GT7 default 64 MB, `0` = uncapped): caps total VRAM held by `PRT-HDRKEEP` at 64 MB (reclaims ~300 MB VRAM while still keeping the ~28 MB sky/cloud LUTs).
 3. PRT-FEEDTUNE (`RYGT_FEED_GPU_MIN`, GT7 default 64, was 32; `SHADGT_FEED_GPU_MIN` overrides): raises `ChunkFlushCheck` draw threshold from 32 to 64 to cut mid-frame Vulkan submits and CPU/driver overhead.
 
-## Parked (do not start, remind the owner)
-PS4 Pro 4K softness check (R15-R22 logs and display code verified identical, parked 2026-11-26); Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
-SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
-pread error 5 / errno 9 on savedata; read-write alias throws (quiet, watch).
-First Scapes photo of a session can be black (R17, 2026-11-24): photo draw waits, but a 1600x1800 draw
-(0x102fe00000) in the same frame is skipped by FIX-GT7-131 and read empty later; suspect the FIX-GT7-102
-one-off frame budget. Fix idea: photo window ignores that budget.
-Research (parked, owner 2026-11-24): (1) faster shader compilation (translation + driver pipeline build time);
-(2) a shader manifest stored next to the game save, used by the launcher prewarm to rebuild the shader cache
-when the shader folder is deleted.
-Readback fence hitches (R19 item 6): small 50-100 ms readback waits are real round trip latency; the big ones
-were VRAM paging (R19 PRT-VRAMHEAD). Revisit only if they stay after PRT-VRAMHEAD.
-Deferred: PRELOADEVICT.
-Upstream picks not taken: FIX-SGT-116, FEAT-SGT-118 (#108, parked), FIX-SGT-119, review fix 88d1d70c (conflicts); #99 HDR (dropped);
-FIX-SGT-124, PERF-SGT-126 (AMD only); FIX-GTS-528/529 (GT Sport).
-Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
+## Round 26 test results (owner 2026-11-27, logs `round 26\run 1` and `run 2`)
+- Run 1 (defaults, `feed_min=64`, `SHADGT_NATIVE_FENCE_BATCH_MS=2`): `PRT-METAZSTD` PASS (0 errors); `PRT-HDRKEEP` 64 MB cap PASS (kept 5 sky/cloud LUTs = 29.0 MB vs R25 375.1 MB, -346 MB). `PRT-FEEDTUNE=64` unhelpful: `ChunkFlushCheck` 16.8 -> 13.7/f, but `FlushDeferredFences` idle flushes rose 12.7 -> 15.0/f and `DeferFenceSignal` 15.7 -> 17.0/f (`fence->label` 1.54 -> 1.57 ms). Crash at 14:37:08 (NVIDIA GPU Device Lost `DIAG-243`/`DIAG-206`) while VRAM was over budget (6,567 / 6,342 MB, 428 ms WDDM paging hitch, 50.1 fps avg).
+- Run 2 (zero-code A/B: `SHADGT_NATIVE_FENCE_BATCH_MS=0.5`, `RYGT_FEED_GPU_MIN=32`, test race 14:57:59-15:04:51, 410 s): **0 crashes**, **55.09 fps avg** (min 34.9, max 59.9; 13.44 ms GPU, 13.74 ms list open, 2,178 draws/f), VRAM 5,578-6,101 MB (avg 5,805 MB, 0 over budget; `PRT-HDRKEEP` 29.0-31.6 MB), only 6 logged hitches (max 79 ms, all `DeferFenceSignal` fence waits). `0.5 ms` batch window cut `FlushDeferredFences` idle flushes 12.7 -> 11.48/f and `fence->label` 1.54 -> 1.45 ms for only +2.1 submits/f (51.22 vs 49.1/f). 375 mid-race pipeline builds across 13 windows.
 
-## Round history (one line each; details in the Fix log)
-- R3 2026-11-21: port of Round 1/2 onto pr-tests, store compression, prewarm. STORECLEAN deleted a live store (fixed R4).
-- R4 2026-11-21/22: driver cache keep, SRT walker, AF 16x, Pro downscale + RCAS, photo writeback, stall log.
-- R5 2026-11-22: diagnostics (SYSPARAM, VRAMREG, STALLCAUSE). 5.1 audio confirmed working.
-- R6 2026-11-22: sharded driver cache, splash hold, VRAMREL2, RCAS slider. 30+ min without single digit fps.
-- R7 2026-11-22: VRAMTRIM, quiet logs, LONGWAIT. Big hitches smaller (1.0-1.5 s -> 0.6-0.8 s).
-- R8 2026-11-23: upstream picks, STALLSAMPLE, VRAMIDLE.
-- R9 2026-11-23: GPU checkpoints in release, stall symbols. Photo black again, VRAM fill on photos.
-- R10 2026-11-23: DROPFAST, PHOTOWIN, REGIONCAP (off), VRAMREG3, STAGESHRINK, VRAMIDLE backoff, FIX-SGT-115/125.
-  Photos and post-photo fps fixed; hitches fewer.
-- R11 2026-11-23: diag round HITCHLOG, TESSWAIT, VIEWCHURN, VMAFREE, PASSTIME, FENCESITE, SUBMITS; STAGESHRINK v2; VRAMTRIM step (off).
-- R12 2026-11-23: FENCEBATCH (off), LEASEASYNC (off), HITCHLOG v2, PHOTOCRASH diag, SHADOWLOG diag. R11 test: once-per-lap hitch, readback fence waits ~7 s/10 s, crash after photos (stack overflow PDI).
-- R14 2026-11-24: FENCEBATCH on, AUDIOLOOP diag, #118 dropped. R13 test: run 1 (no fence batch) 19 race hitches 5.8 s, VRAM 7.4-7.6 GB, name tags jumping; bat 13 hitches 2.0 s; audio thread climbs 20% -> 95% over a race.
-- R13 2026-11-24: PHOTOFIX (STAGESHRINK v2 off), LEASEASYNC on, PRT log lines to Warning, AUDIOLOAD diag; ports #119, #115, #118 (off); #105 already in. R12 test: bat 16 vs 22 hitches, black photos from STAGESHRINK v2, audio thread 95-99% core.
-- R15 2026-11-24: REDZONESKIP (off) for the audio mix loop. R14 test: no felt hitches (photo then race too), race VRAM 7.0-7.2 GB after a photo with no hitches (trim not needed); crackle = audio_diag underruns while the mixer thread is at 80-99%.
-- R16 2026-11-24: AUDIOMXCSR log, AUDIOFTZ (off). R15 test: red-zone skip works but no audio gain (thread still 80-98%).
-- R16b 2026-11-24: AUDIOFAULT log, AUDIOCORE (off). R16 CI cancelled before test.
-- R18 2026-11-24: DRVHIT, DRVSEG (segments + index, no rotation), DRVSTALE, SPLASHVERIFY, DRVMIGRATE, DRVMEM, DRVSAFE, DRVSAVE; shards fallback off.
-- R19 2026-11-25: segment cleanup fix, SPLASHVERIFY strict, migrate 50%, DRVMOVE, DRVSEAL, race DRVMEM, VRAMHEAD (512 MB). R18 test: open segment deleted every start, imported shards ~30% hits, race hitches = VRAM paging.
-- R20 2026-11-25: DRVSEAL drain, DRVPLAIN (ryty_prewarm), VRAMHEAD reload backoff, RBWAIT, RBBATCH (on), DRVTRACK. R19 test: segments PASS (27673 loaded, 0 rebuilt), splash hang from the early seal, VRAMHEAD thrash in r19-1b, first lap readback waits.
-- R17 2026-11-24: AUDIOFTZ on in GT7. R17 test: audio PASS, no crash; driver cache shards over 1024 MB rotate (R18). R16b test: denormals were the audio crackle (80-92% to 15-18%, underruns 0); AUDIOCORE no gain.
-- R20 test 2026-11-25: DRVSEAL and DRVPLAIN pass; RBWAIT/RBBATCH never ran; DRVTRACK no course paths; DRVSTALE drop rebuilt 8984 at the splash.
-- R20 run 3 2026-11-25 (long play): map textures break after ~20 track changes; DRVSTALE dropped seg3/seg4 (1931/2173 used); VirtualProtect 487 x3.
-- R21 2026-11-25: TEXSTALE, TEXREFRESH, PROTECTFAIL, DRVSTALE v2 (10% rule, stale marks), RBWAIT v2, RBBATCH v2 (order fences), DRVTRACK off.
-- R21 test 2026-11-26: guest textures never stale (map bug is a GPU-made picture), VRAM 7.2-7.5 GB at the break, VRAMHEAD backoff stuck at 1/8, RBBATCH v2 likely worse, DRVSTALE v2 pass.
-- R22 2026-11-26: ports #137 #122 #124 #123 #125 #141, GPUPIC/TEXALIAS, VMAFRAG (empty block trim), FILLTRIM; RBBATCH order, TEXSTALE, TEXREFRESH off; VRAMHEAD v2 dropped.
-- R23 2026-11-26: local builds ready (`E:\Projects\RyGT`); ports #146 FIX-SGT-191, #148 FIX-SGT-194; VRAMREL2 default off; PRT-VMADEFRAG (off), PRT-RBSTALL, PRT-GPUPIC race-end reset. R23 Run 1: 55.1 fps, 3 hitches / 213 ms; cyan map clouds caught by PRT-GPUPIC; 24 GB RAM from 4.07 GB segments.
-- R24 2026-11-26: port #147 FIX-SGT-192 (`RYGT_PIPELINE_CACHE_FILES`), PRT-HDRKEEP, PRT-COMPWIDTH=4, PRT-COMPSTAT. R24 Run 1/2: 0 broken textures, RAM 24 GB -> 11.8 GB, VRAM 5.68-5.94 GB, old 4.07 GB `.seg*` deleted; chunk folder 5.89 GB uncompressed (zstd compression candidate for R25).
-- R25 2026-11-26/27: PRT-CACHEZSTD (existing chunks 6.27 -> 5.27 GB), PRT-KEEP (8192), PRT-CACHEFAST (64 MB memo, <8 ms fast-hit skip). R25 Run 1: 53.8 fps, 10 hitches / 601 ms (-42% vs R24), 8,714 fast-hits (0 missed/refused), exit RAM 10.9 GB, 0 broken textures.
-- R26 2026-11-27: PRT-METAZSTD (existing .meta 0.91 -> 0.29 GiB), PRT-HDRKEEP 64 MB cap, PRT-FEEDTUNE (64). Built and deployed locally; awaiting Run 1 test.
+## Round 27 (owner GO 2026-11-27, local build shadGT 12ef7372)
+1. Revert PRT-FEEDTUNE (`RYGT_FEED_GPU_MIN`, GT7 default back to 32; keep `PRT-METAZSTD` and `PRT-HDRKEEP` 64 MB cap).
+2. PRT-IDLEFLUSH (`RYGT_IDLE_FLUSH_LOG`, GT7 on, log only; `RYGT_SKIP_REDUNDANT_IDLE_FLUSH`, default off, `1` = on in GT7): tracks held fence tick and oldest held label timestamp; every 10 s logs needed vs redundant `FlushDeferredFences` idle flushes (where `ChunkFlushCheck` or `Present` already advanced `scheduler.CurrentTick()`), skipped count, and avg/max held label age in ms. When `RYGT_SKIP_REDUNDANT_IDLE_FLUSH=1`, skips redundant empty submits.
+3. PRT-SPLASHWARM (`RYGT_SPLASH_WARM_TOP`, default 0 = off; `1` = 2048, `n` = top n up to 16384 in GT7): keeps the top N most-used launcher-built pipelines (`PipelineUses::Count(hash)`, guarded on `KeyNormalizeOn()`) out of `PRT-SPLASHSKIP` erase and sorts them by use count so they stay pre-built in `prt_ready` across menus and race start.
+4. PRT-HITCHLOG v3 (`RYGT_HITCH_LOG`, GT7 on): tracks a rolling EMA baseline of non-hitch per-frame fence wait ms (reset on race/menu transitions) and classifies fence waits by excess over baseline (`+X ms vs Y ms base`) so steady-state priority-thread waits do not mask real hitch causes.
 
-## Fix log (one row per change; test column = owner result)
+## Round 27 test results (owner 2026-11-27, logs `round 27\run 1` and `run 2`)
+- Run 1 (`SHADGT_NATIVE_FENCE_BATCH_MS=0.5`, R27 switches off, 16:29:30-16:36:22): **0 crashes**, **54.42 fps avg** (min 33.3, max 60.0), 13.62 ms GPU, 13.81 ms list open, 52.13 submits/f (`FlushDeferredFences` 12.94/f), `PRT-IDLEFLUSH` 1.4% redundant, held label age **0.10 ms avg** (rules out `LABELKICK`), 1,952 mid-race pipeline builds, 12 hitches (4 `game CPU` cleanly separated by HITCHLOG v3).
+- Run 2 (`SHADGT_NATIVE_FENCE_BATCH_MS=0.5`, `RYGT_SKIP_REDUNDANT_IDLE_FLUSH=1`, `RYGT_SPLASH_WARM_TOP=1`, 16:41:37-16:48:19): **0 crashes**, **55.58 fps avg** (min 37.6, max 60.1; light windows 59.25 fps, heavy windows 37.6-41.2 fps), 13.38 ms GPU, 13.25 ms list open, 50.16 submits/f (`FlushDeferredFences` 10.83/f), 2.2% redundant idle flushes (6,656 skipped), `PRT-SPLASHWARM` kept 1,986 pipelines (+1.3 s splash) and cut mid-race builds **-83%** (1,952 -> 334, 0 `game CPU` hitches). Two 7 GB VRAM spikes (192 ms, 106 ms) traced to GT7's 751 MB buffer region growing downward without front slack.
+
+## Round 28 (owner GO 2026-11-27, local builds shadGT 90b57453 / fee2cf9b / 4d9d814e + RyGT 664fad5)
+1. PRT-SPLASHWARM B1-B3 + default ON (`RYGT_SPLASH_WARM_TOP`, GT7 default 2048): B1 calls `PipelineUses::NoteUse` on warm pipeline install; B2 snapshots `(uses, index)` before sorting (fixes concurrent comparator UB); B3 releases untaken `prt_ready` entries in batches of 64 after 60 s in the first race (~278 MB reclaimed).
+2. PRT-IDLEFLUSH skip default ON (`RYGT_SKIP_REDUNDANT_IDLE_FLUSH`, GT7 default on, `0` = off).
+3. PRT-REGIONGROWDOWN (`RYGT_REGION_GROW_DOWN`, GT7 only, default off, `1` = on): pads downward region growth (`begin`) using `SHADGT_REGION_GROW_MB` slack (halving down to 4 MB to fit bounds) to eliminate repeated 751 MB buffer rebuilds and +750 MB VRAM spikes.
+4. PRT-FEEDPASS (`RYGT_FEED_AT_PASS_END`, GT7 only, default off, `1` = on; `RYGT_FEED_PASS_LOG`, GT7 on, log only): logs passes ended vs broken by `ChunkFlushCheck` every 10 s; when enabled, defers GPU-feed splices until the next non-rendering `ChunkFlushCheck` (keeping the 512-command cap).
+5. PRT-HITCHLOG v3 ratio baseline + guest write faults (`RYGT_HITCH_LOG`, GT7 on): uses `fence_ms / frame_ms` ratio baseline so long frames do not falsely read steady-state waits as excess; adds per-frame `GuestFaults` count and ms.
+6. PRT-RACEBUILD (`RYGT_RACE_BUILD_LOG`, GT7 on, log only): rate-limited log of in-race graphics builds (`hash`, `uses`, `in_pwk`, `ms`) to classify remaining builds missed by `PRT-SPLASHWARM`.
+7. Launcher DualSense outer deadzone (`RyGT` `loader/Bindings.cs`, `ControlsPage.cs`, `ControlsForm.cs`): adds Left/Right/L2/R2 outer deadzone sliders (default 127, enforces `outer >= inner + 1`, updates trigger meter preview, preserves outer values in legacy `ControlsForm`).
+8. PRT-MARK (`RYGT_MARK_HOTKEY`, GT7 on; `0` = off): automatically logs `AUTO RACE START/END` on `RytyRaceRunning()` transitions, plus manual `F2` (START/END toggle) and `F3` (BUG MARK) hotkeys with local clock, VRAM, and a 2.5 s top-left ImGui toast. Also fixed `PRT-FEEDPASS` `Splice()` re-entrancy null deref (`fee2cf9b`).
+
+## Round 28 test results (owner 2026-11-27, logs `round 28\run 1` and `round 28\run 2 no crash`)
+- Run 1 (defaults + `0.5 ms`, 17:59:10-18:05:57): 0 crashes, 54.40 fps avg, VRAM 5,672-5,981 MB (avg 5,896, 0 over budget). `PRT-FEEDPASS` confirmed up to 6,629 passes broken mid-pass/10 s. `PRT-RACEBUILD` showed 95/96 logged builds were `uses=0, in_pwk=yes` (async install path never called `NoteUse`). Guest faults only 0.5-2.1 ms/hitch.
+- Run 2 (`REGION_GROW_DOWN=1`, `FEED_AT_PASS_END=1`, `PRT-MARK` 19:12:49-19:19:41): 0 crashes, 54.45 fps avg (heavy 46.22, light 58.70), GPU 13.03 ms (lowest yet), lists/f 35.6 (0 broken passes), VRAM 5,782-6,097 MB (avg 5,906, 0 over), only 6 hitches (max 71 ms, 0 `region creates`, 0 `fence waits`). `PRT-FEEDPASS` had a `& 15` gate bug that dropped ~97% of deferred feeds (GPU busy 82% -> 71%, `fence->label` 1.20 -> 1.83 ms). Heavy-scene list-open stayed 17.2 ms despite -25 lists/f, proving heavy scenes are per-draw CPU bound (~6.0 us/draw).
+
+## Round 29 (owner GO 2026-11-27, local builds shadGT d93931c8 + RyGT 77d936f)
+1. PRT-FEEDPASS v2 (`RYGT_FEED_AT_PASS_END`, default off): moved deferred-feed check above the `feed_min` / `& 15` gate in `ChunkFlushCheck` so the first dispatch outside a pass fires the deferred feed without starving the GPU.
+2. Async `NoteUse` + PRT-SPLASHWARM 4096 + async B3 retire (`vk_pipeline_cache.cpp`): added `PipelineUses::NoteUse(pipeline_hash)` in the async pipeline install path (fills warm set over 1-2 sessions), raised GT7 default `RYGT_SPLASH_WARM_TOP` to 4096, and moved B3 untaken pipeline release onto `PipelineRetirementWorker()`.
+3. PRT-MARK (`RYGT_MARK_HOTKEY`, GT7 on): switched hotkeys from `F2`/`F3` (collided with shadGT friends/settings defaults) to `Ctrl+1` (START/END toggle) and `Ctrl+2` (BUG MARK) with a foreground-window PID check.
+4. Logs: added `PRT-REGIONGROWDOWN` telemetry (pads applied, MB padded, 256 MB+ rebuilds) and compute pipeline coverage (`kind=cs`) in `PRT-RACEBUILD`.
+5. Launcher (`RyGT` `77d936f`): `ControlsForm.cs` preserves L2/R2 `analog_deadzone` lines; `ControlsPage.cs` uses consistent `Math.Round` for outer sliders.
+
+## Round 29 & Diagnostics test results (owner 2026-11-27, logs `round 29\run 1..2`, `round 30\run 1`)
+- R29 Run 1/2: Async `NoteUse` + `PRT-SPLASHWARM` 4096 PASS (warmed 2,059 -> 3,346 in 12.5 s, builds 831 -> 545). `PRT-FEEDPASS` v2 still starved GPU (`fence->label` 1.82-1.84 ms, FPS 53.90/52.73 vs 55.58 off) -> keep OFF. `PRT-REGIONGROWDOWN` padded only during loading (0 in races) and expanded regions +240-270 MB -> keep OFF. B3's 60 s timer dropped warm pipelines before Lap 2.
+- Diagnostics 1-run (`round 30\run 1\stdout.log`, `DIAG-SGT-023` + `DIAG-GT7-005` + `PERF-084`, `Ctrl+1` on start/finish straight): proved `VkCommands` (37-41% busy) and `Binder` (0.37 ms wait) are NOT bottlenecks; `GpuRecorder` is 97% pegged on one core. Start/finish straight costs the same per draw (~5.8 us Release, ~9.1 us Diag) as the rest of the lap, just 2x+ the draws (3,600-4,000/f). Top sites: `BindPhase` 36.9%, `EncodePhase` 12.9%, `RefreshSources`/`ApplyRewrite`/`SortRegionWrites`/`Import`/`RefreshRegion` 12.2%, `PipelineLookup` 6.0%.
+
+## Round 30 (owner GO 2026-11-27, local build shadGT a69ccd6c, deployed to `RYGT7\libs\`, awaiting test)
+1. R29 quick fixes: `PRT-SPLASHWARM` B3 now releases untaken warm pipelines at race end or after 120 s without a take (instead of 60 s after race start); `PRT-REGIONGROWDOWN` log uses `merged.size()`; `PRT-RACEBUILD` adds `tess=yes/no`.
+2. PRT-BINDFAST (`RYGT_BIND_FAST`, GT7 only, default off, `1` = on): single `T#` hash per texture in `BindTextures` (reuses prefetch slot), load-before-exchange on `sources_dirty`, `has_pending_region_writes`, and `layer_hash->changed`, drops duplicate `LayersRewritten`, and inlines `ApplyRewrite` precheck.
+3. PRT-BINDFAST part 2 (`RYGT_BIND_REGION_ONCE`, GT7 only, default off, `1` = on): caches `RegionOver(base, size)` once per buffer in `BindBuffers` (invalidated after `MirrorBuffer`) and runs `SortRegionWrites` once at the top of `BindStages` with an inline dirty check in `GuestBuffer`.
+4. R31 telemetry (GT7 on, log only): `PRT-BINDREPEAT` (`RYGT_BIND_REPEAT_LOG`, consecutive identical draw-binding rate) and `hs_en` tessellated draw count per frame in `PRT-PASSTIME`.
+
+
+## Round 31 (owner GO 2026-11-27, local build shadGT a3d35241)
+PRT-PREPNONTESS (`RYGT_PREPARE_NON_TESS`, default off in GT7): bypasses FIX-229's refusal to prepare
+tessellated-pipeline draws, but only for draws that are not themselves tessellated (hs_en/ls_en,
+gs_en/es_en, QuadList, LdsEmulation/TessellationControl pipelines stay excluded). Keeps 4 prepare
+workers. PRT-PREPNONTESS telemetry logs draws found/none/used/mismatch/tess_dropped every 10 s in a
+race and at race end. PRT-BINDFAST `BindTextures` pointer-diff index bug fixed in the same build.
+
+## Round 31 test results (owner 2026-11-27, logs `round 31\run 1` and `run 2`)
+- Run 1 (PREPARE off, BIND_FAST + REGION_ONCE on): 54.0 fps, 3 clean race-start/end transitions, 0
+  crashes, 0 region rebuilds, recorder 18.71 ms heavy, GPU 13.5 ms.
+- Run 2 (PREPARE on): 44.4 fps (-18%), recorder time flat per draw (no CPU gain: list-open per draw
+  6.2 vs 6.4 us/draw, essentially unchanged) but GPU time rose to 17.6 ms in lists (+4.1 ms): prepared
+  reads bind host memory in place (through D3 or an imported view) instead of the VRAM mirror the
+  ordinary recorder path would use, so the GPU paid for host-memory reads it did not pay for before.
+  One buffer region grew 345 MB -> 1012 MB in 15 rebuilds over about 2 minutes (23:27:21-23:29:41),
+  VRAM spiking to 7837 MB, with 608-917 ms stalls exactly at the rebuilds. Crashed at the race-end
+  transition (GPU busy 100%, 0 submits, then DIAG-243/DIAG-206 on a running wave), the same signature as
+  the R8/R25/R26 crashes, and R30 Run 2 had crashed the same way without PREPARE, so PREPARE is not the
+  cause of the hang, only of the fps/VRAM regression. Safety gates held: 0 tess_dropped, 0 mismatch,
+  about 70% of draws used.
+- Verdict: keep RYGT_PREPARE_NON_TESS off. Root cause of the GPU-time cost: PrepareBuffers never asks
+  for a VRAM mirror for a read it can bind in place, so mirrors for those ranges are never made or kept
+  warm. A mirror-aware v2 was proposed for a later round (built in Round 34-B; see below).
+
+## Round 32 (owner GO 2026-11-27, local build shadGT 0d9b2742)
+R32-A: ported 6 commits from upstream `shadgt7/shadgt7` PR #155 (`PERF-SGT-211..234`) into the native
+recorder's bind path, each behind its own GT7-only switch, default off:
+- PERF-SGT-233 folded into `RYGT_BIND_FAST` v2: an early return in RefreshSources for a clean source
+  before the OrderedTiming/Traced() check.
+- PERF-SGT-234 (with two owner-found fixes: `> LongSetLimit` in the flush test, `unused_sets > 20000`
+  in the drop test) -> `RYGT_SKIP_EMPTY_SET_UPKEEP`.
+- PERF-SGT-223 -> `RYGT_EMPTY_IMAGE_QUEUES`. PERF-SGT-212 -> `RYGT_SKIP_DEPENDENT_COPY`.
+- PERF-SGT-219 -> `RYGT_SINGLE_DIRECT_TABLE`. PERF-SGT-232 -> `RYGT_LITERAL_SAMPLERS`.
+Telemetry: `PRT-BINDFAST2:` 10 s skip/hit counters for the 6 switches above; `PRT-REGIONGROW:` logs
+every region rebuild of 256 MB or more with the asked range, write/read, caller site, and program hash
+(this is the log that later let Round 34-B's audit pin down the open region-growth bug precisely).
+`RYGT_SPLASH_WARM_TOP` default raised 4096 -> 6144.
+
+## Round 32 test results (owner 2026-11-27, logs `round 32\run 1`, `run 1-B`, `run 2`, `run 3`)
+- `run 1`, `run 2`, `run 3` accidentally still had `RYGT_PREPARE_NON_TESS=1` in the ini; `run 3` also had
+  `RYGT_GPU_CHECKPOINTS=1` and crashed mid-race (2 min 27 s in, not at a finish; the game log said "the
+  race module has not run for five seconds", the same hang signature, not a new one).
+- `run 1-B` is the clean comparison run (PREPARE off, R32-A + BIND_FAST + REGION_ONCE on): 54.66 avg fps
+  (heavy 47.30 vs the R31 Run 1 baseline of 45.40, +1.90 fps; light 59.00; max 59.9), heavy list-open
+  17.44 ms (vs 18.71 ms, -1.27 ms raw; normalized for the same draw/list load the real R32-A gain is
+  closer to 0-0.3 ms without PREPARE, most of the raw gain was a lighter scene mix that run), GPU
+  13.38 ms, VRAM 5254-5911 MB, 0 crashes, 0 region rebuilds of 256 MB+, SPLASHWARM 4180/6144 used.
+- Verdict: promote R32-A in Round 33-A. RYGT_GPU_CHECKPOINTS confirmed useless in Release (section
+  "Known Risks") during this round's crash investigation.
+
+## Round 33-A (owner GO, local build shadGT 69001b18, 2026-11-28)
+Promoted all 7 of Round 30 and Round 32's bind-side switches to default ON in GT7 (`RYGT_BIND_FAST`,
+`RYGT_BIND_REGION_ONCE`, `RYGT_SKIP_EMPTY_SET_UPKEEP`, `RYGT_EMPTY_IMAGE_QUEUES`,
+`RYGT_SKIP_DEPENDENT_COPY`, `RYGT_SINGLE_DIRECT_TABLE`, `RYGT_LITERAL_SAMPLERS`), after an audit found
+no logic bug in any of them. Removed the hot-path atomics the Round 32 telemetry had been using
+unconditionally (about 16 million locked adds per 10 s): counters moved to thread-local plain integers,
+only touched when the new `RYGT_BINDFAST2_LOG` (default off) is on. `RYGT_BIND_REPEAT_LOG` default
+flipped off (its question, consecutive-draw binding reuse, was already answered and ruled out).
+Ported 3 more upstream PR #155 commits, each its own switch, default off:
+- PERF-SGT-213 -> `RYGT_GROUP_VERTEX_SHARPS` (reads consecutive same-page vertex V# descriptors in one
+  guarded copy instead of one `ReadUdReg` per attribute).
+- PERF-SGT-228, with an owner-requested fix (a busy lock now blocks instead of wrongly refusing a
+  mirror) -> `RYGT_STACK_GAP_MEMO` (caches CPU-stack-free address gaps per thread with a seqlock).
+- PERF-SGT-216, with a fix for the FIX-212 Alsace shadow-band hazard (the partner-marking loop now runs
+  for every new image, not only render targets, so it can no longer miss a depth/colour twin pair made
+  the other way round) -> `RYGT_DEPTH_TWIN_HINT`.
+Also added `RYGT_NOTE_WRITES_STAMP`: per-stream epoch stamps on `ImageEntry` replace the linear
+`std::ranges::find` dedupe in `NoteWrites` for `s.written`/`s.read`/`s.attach_dirty`.
+
+## Round 33-A test results (owner 2026-11-28, logs `round 33\run 1`, `run 2`, `run 3`)
+- Run A (the 4 new switches off): 53.87 avg fps, heavy list-open 16.99 ms normalized; a background CPU
+  spike during lap 1 raised this run's fit residual, flagged and excluded from the headline numbers.
+- Run B (the 4 new switches on): 54.93 avg fps, heavy 47.57, heavy list-open 16.67 ms normalized
+  (-0.72 ms vs Round 32's clean baseline, -0.32 ms vs Run A), GPU flat at 13.48 ms, CPU threads up
+  slightly (82.7/81.0/80.7% GpuRec/Binder/VkCmd) because less idle waiting, 0 crashes/hitches/rebuilds.
+- Alsace 3-lap visual check (the 4 switches on): 0 flicker observed, confirming the `RYGT_DEPTH_TWIN_HINT`
+  fix. VRAM 5313-5867 MB, 51.37 avg fps (slower track, not a regression).
+- Verdict: promote all 4 in Round 34-A.
+
+## Round 34-A (owner GO, local build shadGT cb6f04b2, 2026-11-28)
+Promoted the 4 Round 33-A switches (`RYGT_GROUP_VERTEX_SHARPS`, `RYGT_STACK_GAP_MEMO`,
+`RYGT_DEPTH_TWIN_HINT`, `RYGT_NOTE_WRITES_STAMP`) to default ON in GT7. Closed a gap found in audit:
+4 call sites (`SyncDepthTwin`'s free-list upload, the remembered-fill upload, a compute composition
+write, and `FindDisplay`'s crop image) still pushed into `s.written`/`s.read` directly, bypassing the
+new stamp dedupe (harmless: only extra vector growth, never a dropped entry, but incomplete); all 4 now
+route through the same stamp-guarded helper. Added 6 new Diagnostics-only `OrderedTiming` sub-scopes
+(`BindBuffers`, `BindTextures`, `BindSamplers`, `BindVertexIndex` at both call sites, `BindUserData`,
+`SyncDepthTwin`) so the next profiling run could finally attribute the two largest unidentified buckets
+from Round 32-33's diagnostics table ("parallel" and "remaining BindPhase").
+
+## Round 34-A test results (owner 2026-11-28, Diagnostics run `round 34\run 1-A`, 431.0 s race, 0 crashes)
+- Three-thread co-bottleneck question answered: `VkCommands` was 39.1% busy with 0 ring-space waits and
+  about 0.03 ms/frame of recorder wait; `Binder` made 0 inline binds and cost the recorder about
+  0.196 ms/frame of wait. Neither is a ceiling; the 80%+ CPU numbers seen on them in Release `PRT-PERF`
+  lines are spin-waiting, not real blocking. 100% of the remaining CPU ceiling is `GpuRecorder` itself.
+- Full `GpuRecorder` breakdown at the heavy straight (3081 draws/frame, Diagnostics total 28.78 ms,
+  Release-scaled about 0.64x): `EncodePhase` 13.9% (~2.55 ms Release), `BindBuffers` 12.2% (~2.24 ms),
+  `BindTextures` 11.5% (~2.12 ms), untagged "parallel" outer 11.4% (~2.10 ms), remaining `BindPhase`
+  7.6% (~1.40 ms), `PipelineLookup` 6.2%, `BindVertexIndex` 5.3%, `NoteWrites` 3.6%, the rest under 3%
+  each. This table is what Round 34-B's design and the later follow-up correction were built from.
+
+## Round 34-B (owner GO, local build shadGT e06f38cf, 2026-11-28)
+Two independent items:
+1. **`RYGT_BARRIER_STAMP_CHECK`** (default off): uses the `RYGT_NOTE_WRITES_STAMP` fields from Round
+   33-A/34-A to turn two remaining linear scans into O(1) checks: `NeedsBarrierFor(b)` (which used to
+   scan every one of a draw's bound textures against `s.written`) and `Draw`'s `targets_in(s.read /
+   s.attach_dirty)` (which used to scan a draw's attachments against those lists). Falls back to the
+   old linear-scan body whenever `RYGT_NOTE_WRITES_STAMP` is off. (A follow-up correction from a second
+   pass found that the "parallel" bucket identified in Round 34-A's table is actually dead code in every
+   run so far (`SHADGT_PARALLEL_RECORDING` was never set), so these two barrier-rule fixes, not a
+   parallel-admission rewrite, were the real target this round.)
+2. **`RYGT_PREPARE_NON_TESS` v2** (mirror-binding): `PrepareBuffers` now checks the same `mirrored_read`
+   condition the ordinary recorder path uses. If a VRAM mirror already covers the range, it binds that
+   mirror (refreshed later, together with vertex mirrors, in `CommitPrepared` after regions are
+   refreshed (audited and confirmed correctly ordered, no double-refresh). If no mirror exists yet, the
+   whole buffer bind is refused and the draw falls back to the ordinary recorder path, which can create
+   the mirror candidate normally. This removes Round 31's GPU-time regression when a mirror is already
+   warm, but it does not touch the write side, so it does not fix the region-growth bug (see Known
+   Risks), and still triggers it because PREPARE changes the game's read timing/pattern.
+
+## Round 34-B test results (owner 2026-11-28, logs `round 34\run 1-B` and `run 2-B`)
+- `run 1-B` (`RYGT_BARRIER_STAMP_CHECK=1`, PREPARE off): clean win across every workload. Heavy fps
+  49.90 (vs Round 33-A's 47.57), heavy list-open 16.06 ms raw / 16.42 ms normalized (-0.25 ms vs R33-A),
+  GPU flat at 14.25 ms heavy, CPU down about 10 points on all three threads (72.9/72.2/71.7% vs
+  82.7/81.0/80.7%), VRAM 5763-6314 MB, 0 crashes, 0 region rebuilds. HITCHLOG still showed 53 hitch
+  lines (up to 966 ms), essentially the same baseline level as Round 33's 55, not caused or fixed by
+  this switch; a separate, pre-existing "game CPU did not submit" pattern (see Known Risks candidate,
+  not yet root-caused).
+- `run 2-B` (`RYGT_PREPARE_NON_TESS=1` v2, + `RYGT_BARRIER_STAMP_CHECK=1`): confirmed the region-growth
+  bug still fires with PREPARE on (16 rebuilds, 345 MB -> 1012 MB, `write=0 site=guest-buf-read` on
+  every one), VRAM spiking to 8930 MB transient (peak, from `PRT-PERF`/`PRT-RBSTALL`; the slower-updating
+  `PRT-VRAMHEAD` "peak" field only shows 7149 MB), 36 hitches of 100 ms or more, heavy fps down to 40.68
+  (GPU 17.23 ms heavy, +2.9 ms over the clean run). 0 crashes this run, but the hitches were clearly
+  felt by the owner.
+- Verdict: promote `RYGT_BARRIER_STAMP_CHECK` to default ON in Round 35. Keep `RYGT_PREPARE_NON_TESS`
+  off for good (both versions now definitively ruled out); do not re-propose a v3 unless the
+  region-growth bug itself is fixed first.
+
+## Round 35 (owner GO 2026-11-28, local Release build shadGT 3cc46ed5)
+- Promoted `RYGT_BARRIER_STAMP_CHECK` to default ON in GT7 (`=0` opts out); kept `RYGT_PREPARE_NON_TESS`
+  default OFF.
+- Promoted `SHADGT_NATIVE_FENCE_BATCH_MS` GT7 default from `2` to `0.5` ms (explicit env still overrides;
+  GT Sport unchanged).
+- Quieted 12 verified pure-log `PRT-*` switches to default OFF (`=1` opts in): `RYGT_FENCE_SITE_LOG`,
+  `RYGT_SUBMIT_LOG`, `RYGT_VIEW_CHURN_LOG`, `RYGT_COMPILE_TIMING_LOG`, `RYGT_RACE_BUILD_LOG`,
+  `RYGT_READBACK_WAIT_LOG`, `RYGT_READBACK_WAIT_V2`, `RYGT_IDLE_FLUSH_LOG`, `RYGT_FEED_PASS_LOG`,
+  `RYGT_TESS_WAIT_LOG`, `RYGT_GPU_PIC_LOG`, `RYGT_VMA_FREE_LOG`. Kept `RYGT_DRIVER_CACHE_HIT_LOG` ON
+  after verifying `PrtDrvHitOn()` feeds `PRT-DRVMOVE`'s permanent driver-cache miss tracking (~15 lines/race).
+- Deployed Release ThinLTO+PGO `libSceVideoOut.prx` (`3cc46ed5`) and cleaned `CUSA24769.RyGT.ini`
+  (zero custom `env=` overrides needed). Awaiting owner verification race before GitHub push and Release.
+
+
+## Fix Log (one row per change; test column = owner result)
+
 | date | repo | commit | what (switches) | default | CI | test |
 |---|---|---|---|---|---|---|
 | 2026-11-21 | shadGT | e466f72f | merge pr/trophies e099ee0 (shadGT#75), replaces ecfd132e (`RYGT_SCE_SYS_LAYERS`, `RYGT_TROPHY_TOAST`, `RYGT_TROPHY_TOAST_TEST`, `RYGT_TROPHY_PROGRESS_SD`, `RYGT_TROPHY_KEY_FILE`) | on (TOAST_TEST off) | run 44911191881 green, artifact 14712320793 | pending |
@@ -876,4 +1268,21 @@ Not ported: rygt7 10d6502 "Verbose logs" toggle, c47d3b4 HD UI and all DLSS / HD
 | 2026-11-26 | shadGT | 20d6e91b | Round 23 port #146 FIX-SGT-191 (`RYGT_PERFRAME_WRITE_CUT`) + #148 FIX-SGT-194 (`RYGT_FAULT_XSTATE_REPAIR`); `RYGT_VRAM_OVER_RELEASE2` default off; PRT-VMADEFRAG (`RYGT_VMA_DEFRAG`, off); PRT-RBSTALL (`RYGT_RB_STALL_LOG`, 200 ms); PRT-GPUPIC race-end budget reset | GT7 on / both on / off / off / 200 | local build | R23 Run 1: 55.1 fps, 3 hitches / 213 ms, VRAM 6.0 GB; cyan map clouds caught by PRT-GPUPIC |
 | 2026-11-26 | shadGT | 61fe5285 | Round 24 port #147 FIX-SGT-192 (`RYGT_PIPELINE_CACHE_FILES`); PRT-HDRKEEP (`RYGT_HDR_SKY_KEEP`); PRT-COMPWIDTH (`RYGT_COMPILE_HEAVY_WIDTH`, 4 on 12+ threads); PRT-COMPSTAT (`RYGT_COMPILE_TIMING_LOG`) | GT7 on / on / 4 / on | local build | R24 Run 1/2: 0 broken textures, RAM 24 -> 11.8 GB, VRAM 5.68-5.94 GB, 0 cache misses; 16 small hitches at warm race start |
 | 2026-11-27 | shadGT | 43ec9d33 | Round 25 PRT-CACHEZSTD (`RYGT_PIPELINE_CACHE_ZSTD`, zstd3 chunks); PRT-KEEP (`RYGT_PRECOMPILE_KEEP`, 8192); PRT-CACHEFAST (`RYGT_PIPELINE_CACHE_FAST`, 64 MB memo + <8 ms fast-hit skip) | GT7 on / 8192 / on | local build (not pushed) | R25 Run 1: 53.8 fps, 10 hitches / 601 ms (-42% vs R24), 8714 fast-hits, exit RAM 10.9 GB, chunks 6.27 -> 5.27 GB |
-| 2026-11-27 | shadGT | 84a467fe | Round 26 PRT-METAZSTD (`RYGT_META_ZSTD`, zstd3 .meta); PRT-HDRKEEP cap (`RYGT_HDR_SKY_KEEP_CAP`, 64 MB); PRT-FEEDTUNE (`RYGT_FEED_GPU_MIN`, 64) | GT7 on / 64 / 64 | local build (not pushed) | deployed, awaiting Run 1 |
+| 2026-11-27 | shadGT | 84a467fe | Round 26 PRT-METAZSTD (`RYGT_META_ZSTD`, zstd3 .meta); PRT-HDRKEEP cap (`RYGT_HDR_SKY_KEEP_CAP`, 64 MB); PRT-FEEDTUNE (`RYGT_FEED_GPU_MIN`, 64) | GT7 on / 64 / 64 | local build (not pushed) | Run 1: METAZSTD + HDRKEEP PASS (29 MB), FEEDTUNE=64 unhelpful; Run 2 (`0.5 ms`, `32`): 55.09 fps, 0 crashes, 6 hitches, `fence->label` 1.45 ms |
+| 2026-11-27 | shadGT | 12ef7372 | Round 27 revert PRT-FEEDTUNE (`RYGT_FEED_GPU_MIN`, 32); PRT-IDLEFLUSH (`RYGT_IDLE_FLUSH_LOG` on, `RYGT_SKIP_REDUNDANT_IDLE_FLUSH` off); PRT-SPLASHWARM (`RYGT_SPLASH_WARM_TOP` off, 1 = 2048); PRT-HITCHLOG v3 (baseline-relative fence time) | 32 / on / off / off / on | local build (not pushed) | Run 1: 54.42 fps, held age 0.10 ms; Run 2 (switches on): 55.58 fps, -83% builds (1952 -> 334), 6656 redundant flushes skipped, 0 crashes |
+| 2026-11-27 | shadGT | 90b57453, fee2cf9b, 4d9d814e | Round 28 SPLASHWARM B1-B3 + default on (`RYGT_SPLASH_WARM_TOP` 2048); IDLEFLUSH skip default on (`RYGT_SKIP_REDUNDANT_IDLE_FLUSH`); PRT-REGIONGROWDOWN (`RYGT_REGION_GROW_DOWN`, off); PRT-FEEDPASS (`RYGT_FEED_AT_PASS_END` off, `RYGT_FEED_PASS_LOG` on); HITCHLOG v3 ratio baseline + guest faults; PRT-RACEBUILD (`RYGT_RACE_BUILD_LOG`, on); PRT-MARK (`RYGT_MARK_HOTKEY`, on) | 2048 / on / off / off / on / on / on / on | local build (not pushed) | Run 1: 54.40 fps, 0 over VRAM; Run 2: 54.45 fps, GPU 13.03 ms, 6 hitches max 71 ms, 0 over VRAM; caught FEEDPASS `& 15` gate bug and async `NoteUse` gap |
+| 2026-11-27 | RyGT | 664fad5 | Round 28 launcher DualSense outer deadzone controls (`loader/Bindings.cs`, `ControlsPage.cs`, `ControlsForm.cs`; Left/Right/L2/R2 outer, default 127, `outer >= inner + 1` validation) | 127 | local build (not pushed) | deployed |
+| 2026-11-27 | shadGT | d93931c8 | Round 29 FEEDPASS v2 gate fix (`RYGT_FEED_AT_PASS_END` off); async `NoteUse` + SPLASHWARM 4096 + async B3 retire (`RYGT_SPLASH_WARM_TOP` 4096); PRT-MARK Ctrl+1/Ctrl+2 + foreground check (`RYGT_MARK_HOTKEY`); PRT-REGIONGROWDOWN log + compute PRT-RACEBUILD log | off / 4096 / on / on | local build (not pushed) | SPLASHWARM 3346 in 12.5 s; FEEDPASS + REGIONGROWDOWN stay off; Diag run X-rayed `GpuRecorder` 97% (`BindPhase` 36.9%) |
+| 2026-11-27 | RyGT | 77d936f | Round 29 launcher: preserve L2/R2 deadzones in `ControlsForm.cs`, consistent `Math.Round` in `ControlsPage.cs` | 127 | local build (not pushed) | deployed |
+| 2026-11-27 | shadGT | a69ccd6c | Round 30 B3 race-end/120 s no-take trigger; REGIONGROWDOWN `merged.size()` log; RACEBUILD `tess=yes/no`; PRT-BINDFAST (`RYGT_BIND_FAST` off); PRT-BINDFAST part 2 (`RYGT_BIND_REGION_ONCE` off); PRT-BINDREPEAT (`RYGT_BIND_REPEAT_LOG` on) + PASSTIME tess count | off / off / on | local build (not pushed) | Run 1: 54.20 fps, 14.2% tess, 353 builds; Run 2 (on): smoother (light 58.91, heavy 48.08, 131 builds, 14.1% tess, BINDREPEAT 14.4-19.7%), finish-line GPU hang (same as R8/R25/R26) |
+| 2026-11-27 | shadGT | a3d35241 | Round 31 PRT-PREPNONTESS (`RYGT_PREPARE_NON_TESS` off): narrow FIX-229 bypass for non-tessellated draws only (skips hs_en/ls_en, gs_en/es_en, QuadList, and LdsEmulation/TessellationControl in workers and Draw; 4 workers) + 10 s / race-end telemetry; PRT-BINDFAST `BindTextures` pointer-diff index fix | off | local build (not pushed) | Run 1 (off, BIND_FAST+REGION_ONCE): 54.0 fps (3 race ends, 0 crashes, 0 region rebuilds, GPU 13.5 ms); Run 2 (on): 44.4 fps (-18%, GPU 17.6 ms from host-memory in-place reads, 15x 64 MB region rebuilds to 1012 MB / 7837 MB VRAM -> lap-1 608-917 ms stutters, finish-line GPU hang; gates held: 0 tess_dropped, 0 mismatch, ~70% used). Keep OFF |
+| 2026-11-27 | shadGT | 0d9b2742 | Round 32 R32-A batch from upstream PR #155: PERF-SGT-233 folded into `RYGT_BIND_FAST` v2; PERF-SGT-234 (with `> LongSetLimit` and `unused_sets > 20000` fixes) `RYGT_SKIP_EMPTY_SET_UPKEEP`; PERF-SGT-223 `RYGT_EMPTY_IMAGE_QUEUES`; PERF-SGT-212 `RYGT_SKIP_DEPENDENT_COPY`; PERF-SGT-219 `RYGT_SINGLE_DIRECT_TABLE`; PERF-SGT-232 `RYGT_LITERAL_SAMPLERS`; `PRT-BINDFAST2:` 10 s log; `PRT-REGIONGROW:` 256 MB+ caller log; `RYGT_SPLASH_WARM_TOP` default 6144 | off (all 5 new) / 6144 | local build (not pushed) | Clean `run 1-B` (`PREPARE_NON_TESS=0`, R32-A + BIND_FAST + REGION_ONCE on): **54.66 avg FPS** (heavy **47.30 FPS** vs R31 Run 1 45.4, +1.90 FPS; light **59.00 FPS**; max 59.9), heavy list open **17.44 ms** (vs 18.71 ms, -1.27 ms), overall **13.71 ms** (`6.34 us/draw`), GPU **13.38 ms**, VRAM 5254-5911 MB, **0 crashes**, **0** 256MB+ region rebuilds, SPLASHWARM 4180/6144, all 6 PRT-BINDFAST2 counters firing 1.2-6.9M/10 s |
+| 2026-11-28 | shadGT | 69001b18 | Round 33-A: promote all 7 R30+R32-A switches to default ON in GT7 (`RYGT_BIND_FAST`, `RYGT_BIND_REGION_ONCE`, `RYGT_SKIP_EMPTY_SET_UPKEEP`, `RYGT_EMPTY_IMAGE_QUEUES`, `RYGT_SKIP_DEPENDENT_COPY`, `RYGT_SINGLE_DIRECT_TABLE`, `RYGT_LITERAL_SAMPLERS`); remove hot-path atomics behind `RYGT_BINDFAST2_LOG` (off); set `RYGT_BIND_REPEAT_LOG` default off; port PERF-SGT-213 (`RYGT_GROUP_VERTEX_SHARPS`), PERF-SGT-228 with blocking fallback (`RYGT_STACK_GAP_MEMO`), PERF-SGT-216 with FIX-212 Alsace fix (`RYGT_DEPTH_TWIN_HINT`), and `RYGT_NOTE_WRITES_STAMP` (per-stream epoch dedupe in NoteWrites) | 7 promoted ON / 4 new OFF / logs OFF | local build (not pushed) | deployed, awaiting R33-A A/B + Alsace test |
+
+
+| 2026-11-27 | shadGT | a3d35241 | Round 31 PRT-PREPNONTESS v1: bypass FIX-229 for non-tessellated draws only (`RYGT_PREPARE_NON_TESS`), 4 workers, 10 s + race-end telemetry; `BindTextures` pointer-diff index fix | off | local build (not pushed) | Run 1 (off): 54.0 fps, 0 crashes, 0 region rebuilds, GPU 13.5 ms. Run 2 (on): -18% fps, GPU +4.1 ms (host-memory reads), 15x region rebuild to 1012 MB / 7837 MB VRAM, lap-1 stutters, finish-line hang. **Keep off** |
+| 2026-11-27 | shadGT | 0d9b2742 | Round 32 R32-A: ports PERF-SGT-233 (`RYGT_BIND_FAST` v2), 234 fixed (`RYGT_SKIP_EMPTY_SET_UPKEEP`), 223 (`RYGT_EMPTY_IMAGE_QUEUES`), 212 (`RYGT_SKIP_DEPENDENT_COPY`), 219 (`RYGT_SINGLE_DIRECT_TABLE`), 232 (`RYGT_LITERAL_SAMPLERS`); `PRT-BINDFAST2:` log; `PRT-REGIONGROW:` 256 MB+ caller log; `RYGT_SPLASH_WARM_TOP` default 6144 | off (all 6 new) / 6144 | local build (not pushed) | Clean `run 1-B` (PREPARE off): 54.66 fps, heavy 47.30 (+1.90), list-open 17.44 ms (-1.27 ms raw), GPU 13.38 ms, 0 crashes, 0 region rebuilds |
+| 2026-11-28 | shadGT | 69001b18 | Round 33-A: promote all 7 R30+R32-A switches to default ON; remove hot-path atomics behind `RYGT_BINDFAST2_LOG` (off); `RYGT_BIND_REPEAT_LOG` default off; port PERF-SGT-213 (`RYGT_GROUP_VERTEX_SHARPS`), 228 with blocking fallback (`RYGT_STACK_GAP_MEMO`), 216 with FIX-212 Alsace fix (`RYGT_DEPTH_TWIN_HINT`); add `RYGT_NOTE_WRITES_STAMP` | 7 promoted ON / 4 new OFF | local build (not pushed) | Run B (4 new on): 54.93 fps, heavy 47.57, list-open 16.67 ms (-0.72 ms vs R32), 0 crashes/hitches/rebuilds; Alsace 3 laps 0 flicker |
+| 2026-11-28 | shadGT | cb6f04b2 | Round 34-A: promote the 4 R33-A switches to default ON; close 4-site `NoteWrites` stamp-dedupe gap (`SyncDepthTwin` free-list upload, remembered-fill upload, compute composition write, `FindDisplay` crop); add 6 Diagnostics-only `OrderedTiming` sub-scopes (`BindBuffers`, `BindTextures`, `BindSamplers`, `BindVertexIndex` x2, `BindUserData`, `SyncDepthTwin`) | 4 promoted ON | local build (not pushed) | Diagnostics run (431.0 s, 0 crashes): `VkCommands`/`Binder` are spin-waiting (0 ring waits, 0 inline binds), 100% of the ceiling is `GpuRecorder`; full cost breakdown table produced (EncodePhase, BindBuffers, BindTextures lead) |
+| 2026-11-28 | shadGT | e06f38cf | Round 34-B: `RYGT_BARRIER_STAMP_CHECK` (O(1) `NeedsBarrierFor`/`targets_in` via the R33-A/34-A stamps, needs `RYGT_NOTE_WRITES_STAMP` on); `RYGT_PREPARE_NON_TESS` v2 mirror-binding (binds an existing VRAM mirror in `PrepareBuffers`, refreshed in `CommitPrepared` after regions) | both off (new) | local build (not pushed) | `run 1-B` (barrier stamp only): 49.90 heavy fps, 16.42 ms normalized (-0.25 ms), CPU -10 points, 0 crashes/rebuilds. `run 2-B` (+ PREPARE v2): still 16x region rebuild to 1012 MB, VRAM peak 8930 MB transient, 36 hitches >= 100 ms, GPU +2.9 ms. **Promote barrier-stamp-check; keep PREPARE off for good** |
+| 2026-11-28 | shadGT | 3cc46ed5 | Round 35 release cleanup: promote `RYGT_BARRIER_STAMP_CHECK` default ON and `SHADGT_NATIVE_FENCE_BATCH_MS` default `0.5` in GT7; quiet 12 pure-log `PRT-*` switches to default OFF (`=1` opts in) | GT7 on (12 logs off) | local | pending |
